@@ -41,7 +41,7 @@ The GUI viewer assumes this convention for browsing.
 
 Key operations:
 - chroma key removal (configurable `tol/feather/shrink/bg_mode/key_from/despill`)
-- scaling while keeping aspect ratio
+- scaling (keeps aspect ratio by default; optional small distortion via `prefer=none`)
 - alignment/anchoring into the 450×400 canvas using baseline/left-limit parameters
 - optional preview overlay alpha (`overlay_alpha`) for the preview PNGs
 

@@ -474,10 +474,9 @@ class PipelineRunner(QWidget):
             "Baseline Y": "Vertical baseline used to place the sprite on the 450×400 canvas.",
             "Left Limit X": "X reference line when x_mode=left_limit (aligns sprite to left of hex).",
             "Left Padding": "Extra padding relative to Left Limit X.",
-            "Sprite Height": "Target sprite height in pixels. Set to 0 to disable height-based scaling and enable Sprite Width.",
-            "Sprite Width": "Target sprite width in pixels (used when Sprite Height is 0).",
-            "Prefer": "If both width and height are non-zero, choose which dimension wins (avoid distortion).",
-            "Dimension Preference": "If both width and height are non-zero, choose which dimension wins (avoid distortion).",
+            "Sprite Height": "Target sprite height in pixels. Used when Dimension Preference=height. You can also set both height and width and use Preference=none to allow slight distortion.",
+            "Sprite Width": "Target sprite width in pixels. Used when Dimension Preference=width. With Preference=none and both dimensions set, the sprite is resized to (width,height) even if it distorts.",
+            "Dimension Preference": "Controls scaling. height = use Sprite Height and ignore width (keep aspect). width = use Sprite Width and ignore height (keep aspect). none = if both are set, resize to (width,height) even if it distorts.",
             "Tolerance": "Chroma-key tolerance (0–255). Higher = removes more colors similar to the key (more aggressive background removal), but may start eating into the sprite. Lower = safer for the sprite, but may leave more background/halo.",
             "Feather": "Edge feather/softening (0–255). Higher = smoother, softer alpha edge (reduces jaggies) but can look blurry or expand semi-transparent halo; lower = crisper edge but can look rough. Most noticeable with bg_mode=border.",
             "Shrink": "Alpha erosion (0=off). Helps reduce halos but can eat thin details.",
@@ -794,7 +793,7 @@ class PipelineRunner(QWidget):
         self.sp_left_padding = QSpinBox(); self.sp_left_padding.setRange(-999, 999)
         self.sp_sprite_h = QSpinBox(); self.sp_sprite_h.setRange(0, 10000)
         self.sp_sprite_w = QSpinBox(); self.sp_sprite_w.setRange(0, 10000)
-        self.cb_prefer = QComboBox(); self.cb_prefer.addItems(["height", "width"])
+        self.cb_prefer = QComboBox(); self.cb_prefer.addItems(["height", "width", "none"])
 
         self.sp_tol = QSpinBox(); self.sp_tol.setRange(0, 255)
         self.sp_feather = QSpinBox(); self.sp_feather.setRange(0, 255)
@@ -1119,9 +1118,6 @@ class PipelineRunner(QWidget):
         self.btn_steps_all.clicked.connect(self.steps_select_all)
         self.btn_steps_none.clicked.connect(self.steps_select_none)
 
-        self.sp_sprite_h.valueChanged.connect(lambda _=None: self._sync_sprite_dims_ui())
-        self.sp_sprite_w.valueChanged.connect(lambda _=None: self._sync_sprite_dims_ui())
-
         self.btn_view_refresh.clicked.connect(lambda: self.viewer_refresh_all(keep_selection=True))
         self.cb_view_source.currentIndexChanged.connect(lambda: self.viewer_refresh_all(keep_selection=True))
         self.cb_view_creature.currentIndexChanged.connect(lambda: self.viewer_refresh_groups(keep_selection=True))
@@ -1173,15 +1169,6 @@ class PipelineRunner(QWidget):
             return
         self.le_canvas_bg.setText(c.name().upper())
         self._apply_canvas_bg()
-
-    # ---------------- sprite dims UI ----------------
-    def _sync_sprite_dims_ui(self):
-        # Make precedence explicit: when Sprite Height > 0, disable Sprite Width.
-        # Set Sprite Height to 0 to enable width-based scaling.
-        h = self.sp_sprite_h.value() if hasattr(self, "sp_sprite_h") else 0
-        use_h = h > 0
-        if hasattr(self, "sp_sprite_w"):
-            self.sp_sprite_w.setEnabled(not use_h)
 
     # ---------------- Tooltips ----------------
     def _apply_tooltips(self):
@@ -1304,7 +1291,7 @@ class PipelineRunner(QWidget):
         self.sp_left_padding.setValue(s.left_padding)
         self.sp_sprite_h.setValue(s.sprite_h)
         self.sp_sprite_w.setValue(getattr(s, "sprite_w", 0))
-        self.cb_prefer.setCurrentText(getattr(s, "prefer", "height") if getattr(s, "prefer", "height") in ["height", "width"] else "height")
+        self.cb_prefer.setCurrentText(getattr(s, "prefer", "height") if getattr(s, "prefer", "height") in ["height", "width", "none"] else "height")
         self.sp_tol.setValue(s.tol)
         self.sp_feather.setValue(s.feather)
         self.sp_shrink.setValue(s.shrink)
@@ -1320,7 +1307,6 @@ class PipelineRunner(QWidget):
         self.sp_rows.setValue(s.split_rows)
         self.chk_autocrop.setChecked(bool(s.split_autocrop))
 
-        self._sync_sprite_dims_ui()
 
     def _ui_to_settings(self):
         s = self.s

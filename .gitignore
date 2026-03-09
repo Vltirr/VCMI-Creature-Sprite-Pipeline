@@ -17,6 +17,7 @@ processed_root/
 cleaned_root/
 forced_root/
 previews/
+anim_json
 settings.json
 
 # ---- Logs / temp ----

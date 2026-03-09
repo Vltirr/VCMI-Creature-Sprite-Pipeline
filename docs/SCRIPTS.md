@@ -61,13 +61,15 @@ These parameters control **where** the sprite lands inside the 450×400 frame, a
 Scaling (keeps aspect ratio; no distortion):
 
 - `--sprite_h <int>`: target sprite **height** in pixels.
-  - `0` disables height-based scaling.
-  - Larger = bigger creature; smaller = smaller creature.
+  - Use with `--prefer height` (default).
+  - Set to `0` if you only want width-based scaling.
 - `--sprite_w <int>`: target sprite **width** in pixels.
-  - Used when `sprite_h = 0`, or when both are set and `--prefer width`.
-- `--prefer height|width`: if both `sprite_h` and `sprite_w` are non-zero, choose the controlling dimension.
-  - `height` (default) = width is derived from height (safe, consistent).
-  - `width` = height is derived from width.
+  - Use with `--prefer width`.
+  - With `--prefer none` and both dimensions set, forces a non-proportional resize.
+- `--prefer height|width|none`: controls how scaling is applied.
+  - `height` (default): use `--sprite_h` and **ignore** `--sprite_w` (keeps aspect ratio).
+  - `width`: use `--sprite_w` and **ignore** `--sprite_h` (keeps aspect ratio).
+  - `none`: if **both** `--sprite_h` and `--sprite_w` are set (>0), resize to `(width,height)` **even if it distorts**.
 
 ### Background removal (chroma key)
 
