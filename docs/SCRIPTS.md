@@ -1,138 +1,84 @@
 # CLI scripts reference
 
-
 > `creature_id` refers to the creature folder name (an identifier), e.g. `goblin_darter`.
 
 This document describes each script and its main parameters.
 
 > All scripts accept `--help`.
 
-## 1) `slice_sheet.py`
+## 1) `scripts/slice_sheet.py`
 
-Slices a **grid spritesheet** and exports frames as `frame_000.png`, `frame_001.png`, ...
+Slices a grid spritesheet and exports frames as `frame_000.png`, `frame_001.png`, ...
 
 Modes:
-- **Pipeline mode**: with `--creature <creature_id>` and `--group N`, outputs to `out_root/creature_id/groupN/`
-- **Quick mode**: without creature/group, outputs directly into `out_root/`
+- Pipeline mode: with `--creature <creature_id>` and `--group N`, outputs to `out_root/creature_id/groupN/`
+- Quick mode: without creature/group, outputs directly into `out_root/`
 
 Common parameters:
 - `--in_sheet <file.png>`
 - `--cols <int>`, `--rows <int>`
 - `--out_root <dir>`
-- `--creature <creature_id>` (optional): output into `<out_root>/<creature_id>/...`.
-- `--group N` (optional): output into `<out_root>/<creature_id>/groupN/...`.
+- `--creature <creature_id>` (optional)
+- `--group N` (optional)
 - `--autocrop` (optional)
 
 Example:
 ```bash
-py slice_sheet.py --in_sheet sheet.png --cols 5 --rows 5 --out_root input_root --creature goblin_darter --group 0
+py scripts/slice_sheet.py --in_sheet sheet.png --cols 5 --rows 5 --out_root input_root --creature goblin_darter --group 0
 ```
 
-## 2) `process_frames.py`
+## 2) `scripts/adjust_frames.py`
 
-Processes frames and writes aligned **450×400** PNGs.
+Applies image adjustments to PNG frames while preserving the `creature_id/groupN/*.png` structure.
 
-### Inputs / outputs
+Inputs / outputs:
+- `--in_root <dir>`: input root containing `<creature_id>/groupN/*.png`
+- `--out_root <dir>`: output root. It may be the same as `--in_root` for in-place updates.
 
-- `--in_root <dir>`: input root containing:
-  - `<creature_id>/groupN/*.png`
-- `--out_root <dir>`: output root (same structure):
-  - `<creature_id>/groupN/*.png`
+Scope:
+- `--creature <creature_id>` (optional): only process that creature folder
+- `--group <int>` (optional): only process one group folder
 
-### Scope
+Adjustment parameters:
+- `--brightness <int>`: percentage, `100` = neutral
+- `--contrast <int>`: percentage, `100` = neutral
+- `--saturation <int>`: percentage, `100` = neutral
+- `--sharpness <int>`: percentage, `100` = neutral
+- `--gamma <int>`: percentage, `100` = neutral
+- `--highlights <int>`: range `-100..100`
+- `--shadows <int>`: range `-100..100`
 
-- `--creature <creature_id>` (optional): only process that creature folder.
-  - If omitted, the script processes **all creature folders found under `in_root`**.
-- `--group N` (optional): only process one group folder (`group0`, `group1`, ...).
-  - If omitted, the script processes **all groups present** for the selected creature(s).
+Behavior:
+- If no PNG content exists for the selected scope, the script exits with an error.
+- `--in_root` and `--out_root` may be the same for in-place updates.
+- The script preserves the `creature_id/groupN/*.png` folder layout in the output.
 
-### Position & size (alignment into the 450×400 canvas)
-
-These parameters control **where** the sprite lands inside the 450×400 frame, and **how large** it is.
-
-- `--baseline_y <int>`: vertical “ground line” in output pixels.
-  - Higher values place the sprite **lower** (closer to the bottom).
-  - Lower values place it **higher**.
-- `--left_limit_x <int>`: X reference line used when the script aligns using a left-limit anchor.
-  - Think: “don’t let the sprite cross this line to the left”.
-- `--left_padding <int>`: extra padding added on top of `left_limit_x`.
-  - Increase to push the sprite **right**.
-
-Scaling (keeps aspect ratio; no distortion):
-
-- `--sprite_h <int>`: target sprite **height** in pixels.
-  - Use with `--prefer height` (default).
-  - Set to `0` if you only want width-based scaling.
-- `--sprite_w <int>`: target sprite **width** in pixels.
-  - Use with `--prefer width`.
-  - With `--prefer none` and both dimensions set, forces a non-proportional resize.
-- `--prefer height|width|none`: controls how scaling is applied.
-  - `height` (default): use `--sprite_h` and **ignore** `--sprite_w` (keeps aspect ratio).
-  - `width`: use `--sprite_w` and **ignore** `--sprite_h` (keeps aspect ratio).
-  - `none`: if **both** `--sprite_h` and `--sprite_w` are set (>0), resize to `(width,height)` **even if it distorts**.
-
-### Background removal (chroma key)
-
-These parameters control how the background is removed and how clean the alpha edge looks.
-
-- `--key_from each|first`: how the background “key color” is chosen.
-  - `each`: sample per frame (more adaptive, slower).
-  - `first`: sample only from the first frame (more consistent; can fail if lighting changes).
-- `--bg_mode global|border`:
-  - `global`: treat pixels similar to the key color as background anywhere in the image (aggressive).
-  - `border`: flood-fill from the edges (safer when the sprite contains colors close to the key).
-- `--tol <int>` (0–255): chroma tolerance.
-  - Higher = removes **more** colors similar to the key (more aggressive), but can start **eating into the sprite**.
-  - Lower = preserves sprite details better, but may leave more background/halo.
-- `--feather <int>` (0–255): edge feather/softening.
-  - Higher = smoother edge, can reduce jaggies, but may create a **soft halo** / blur.
-  - Lower = crisper edge, but can look rough.
-  - Most noticeable with `bg_mode=border`.
-- `--shrink <int>`: alpha erosion (“pull in” the mask).
-  - `0` disables.
-  - Useful to reduce halos after feathering, but can remove thin details.
-- `--despill` (flag): reduces magenta/green spill on the sprite edge.
-  - Helpful when the background color reflects onto the subject.
-
-### Recommended starting values
-
-These are conservative defaults you can tweak per creature.
-
-**If your background is a fairly uniform magenta/green screen:**
-- `--bg_mode border`
-- `--key_from first`
-- `--tol 12–22`
-- `--feather 1–3`
-- `--shrink 0–1`
-- Add `--despill` if you see colored edge tint.
-
-**If your background is noisy / uneven lighting:**
-- `--key_from each` (more adaptive)
-- `--tol 18–30` (but watch for detail loss)
-- `--feather 2–4`
-- Consider `--bg_mode global` only if `border` leaves too much background.
-
-**If the sprite has thin details (weapons, whiskers, spikes):**
-- Prefer lower `--tol` and lower `--shrink`:
-  - `--tol 10–18`
-  - `--feather 1–2`
-  - `--shrink 0`
-- Use `--despill` rather than increasing tolerance too much.
-
-**If you see a visible halo after keying:**
-- Reduce `--feather`, then try `--shrink 1`
-- Avoid cranking `--tol` too high (it often makes halos worse by eating edge color transitions)
-
-### Preview / overlay
-
-- `--hex_overlay <file.png>` (optional): 450×400 overlay image (hex grid guide).
-- `--overlay_alpha <int>` (0–255): overlay opacity in preview outputs.
-  - `0` = invisible, `255` = fully opaque.
-
-### Example
-
+Examples:
 ```bash
-py process_frames.py ^
+py scripts/adjust_frames.py --in_root input_root --out_root input_root --creature goblin_darter --brightness 110 --contrast 105
+py scripts/adjust_frames.py --in_root processed_root --out_root processed_root --creature goblin_darter --group 2 --sharpness 120 --gamma 95
+```
+
+## 3) `scripts/process_frames.py`
+
+Processes frames and writes aligned 450x400 PNGs.
+
+Inputs / outputs:
+- `--in_root <dir>`: input root containing `<creature_id>/groupN/*.png`
+- `--out_root <dir>`: output root with the same structure
+
+Scope:
+- `--creature <creature_id>` (optional)
+- `--group N` (optional)
+
+Main parameter groups:
+- Position and size: `--baseline_y`, `--left_limit_x`, `--left_padding`, `--sprite_h`, `--sprite_w`, `--prefer`
+- Background removal: `--key_from`, `--bg_mode`, `--tol`, `--feather`, `--shrink`, `--despill`
+- Preview: `--hex_overlay`, `--overlay_alpha`
+
+Example:
+```bash
+py scripts/process_frames.py ^
   --in_root input_root ^
   --out_root processed_root ^
   --creature goblin_darter ^
@@ -144,23 +90,24 @@ py process_frames.py ^
   --despill
 ```
 
-
+## 4) `scripts/build_anim_json.py`
 
 Builds `creature_id.json` from processed frames.
 
-- Input: `--in_root processed_root`
-- Output: `--out_root anim_json_root`
-- Scope: `--creature <creature_id>` (optional)
+Parameters:
+- `--input_root <processed_root>`
+- `--output_root <anim_json_root>`
+- `--basepath_prefix <prefix>`
 
-Important: frames in JSON include the group folder:
-- `group3/frame_000.png` (not just `frame_000.png`)
+Important:
+- Frame paths in JSON include the group folder, e.g. `group3/frame_000.png`
 
 Example:
 ```bash
-py build_anim_json.py --in_root processed_root --out_root anim_json_root --creature goblin_darter
+py scripts/build_anim_json.py --input_root processed_root --output_root anim_json_root --basepath_prefix battle/
 ```
 
-## 4) `deploy_assets.py`
+## 5) `scripts/deploy_assets.py`
 
 Deploys PNGs into the mod and merges JSON incrementally.
 
@@ -171,11 +118,10 @@ Parameters:
 - `--json_out <mod_json_root>`
 - `--creature <creature_id>` (optional)
 
-Important: JSON merge includes **all groups present in incoming JSON**, even if only some groups had PNGs copied during this run.
-- This matters when non-existing groups are represented via fallbacks to another group’s frames.
+Important:
+- JSON merge includes all groups present in the incoming JSON, even if only some groups had PNGs copied during this run.
 
 Example:
 ```bash
-py deploy_assets.py --in_root processed_root --json_in anim_json_root --assets_out <mod_assets_root> --json_out <mod_json_root> --creature goblin_darter
+py scripts/deploy_assets.py --in_root processed_root --json_in anim_json_root --assets_out <mod_assets_root> --json_out <mod_json_root> --creature goblin_darter
 ```
-
