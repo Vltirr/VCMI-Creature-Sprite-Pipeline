@@ -252,28 +252,46 @@ def left_x_alpha_threshold(img: Image.Image, alpha_threshold: int) -> int:
 
 
 def resize_keep_aspect(img: Image.Image, target_h: int = 0, target_w: int = 0, prefer: str = "height") -> Image.Image:
+    """Resize sprite.
+    - prefer=height: ignore target_w, scale by target_h (keep aspect). If target_h==0 and target_w>0, scale by width.
+    - prefer=width: ignore target_h, scale by target_w (keep aspect). If target_w==0 and target_h>0, scale by height.
+    - prefer=none: if both target_h and target_w are >0, resize to exact size (may distort). If only one is set, keep aspect.
+    """
     img = img.convert("RGBA")
     w, h = img.size
     if w <= 0 or h <= 0:
         return img
 
-    use_h = target_h > 0
-    use_w = target_w > 0
-    if not use_h and not use_w:
+    target_h = max(0, int(target_h or 0))
+    target_w = max(0, int(target_w or 0))
+    pref = (prefer or "height").lower()
+
+    if target_h <= 0 and target_w <= 0:
         return img
 
-    if use_h and use_w:
-        if prefer.lower() == "width":
-            use_h = False
-        else:
-            use_w = False
+    # Distortion mode: force both dimensions
+    if pref == "none" and target_h > 0 and target_w > 0:
+        if target_w == w and target_h == h:
+            return img
+        return img.resize((target_w, target_h), resample=Image.Resampling.LANCZOS)
 
-    if use_h:
-        new_h = target_h
-        new_w = max(1, int(round(w * (new_h / h))))
+    # Aspect-preserving modes
+    if pref == "width":
+        # width wins; fallback to height if width is not provided
+        if target_w > 0:
+            new_w = target_w
+            new_h = max(1, int(round(h * (new_w / w))))
+        else:
+            new_h = target_h
+            new_w = max(1, int(round(w * (new_h / h))))
     else:
-        new_w = target_w
-        new_h = max(1, int(round(h * (new_w / w))))
+        # height wins (default); fallback to width if height is not provided
+        if target_h > 0:
+            new_h = target_h
+            new_w = max(1, int(round(w * (new_h / h))))
+        else:
+            new_w = target_w
+            new_h = max(1, int(round(h * (new_w / w))))
 
     if new_w == w and new_h == h:
         return img
@@ -408,7 +426,7 @@ def main():
 
     ap.add_argument("--sprite_h", type=int, default=100)
     ap.add_argument("--sprite_w", type=int, default=0)
-    ap.add_argument("--prefer", choices=["height", "width"], default="height")
+    ap.add_argument("--prefer", choices=["height", "width", "none"], default="height")
 
     ap.add_argument("--x_mode", choices=["center", "left_limit"], default="left_limit")
     ap.add_argument("--x_offset", type=int, default=0)
