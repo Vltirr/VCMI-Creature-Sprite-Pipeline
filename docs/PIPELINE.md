@@ -105,6 +105,7 @@ Each stage includes:
 - preview only affects the currently selected frame in the viewer
 - the main viewer stays on the original selected frame
 - the external preview editor shows the live adjusted image
+- the preview editor can switch between single-image mode and side-by-side original-versus-adjusted comparison
 - preview does not write files to disk
 - file changes only happen when the corresponding pipeline step is run
 - opening preview from the viewer uses a neutral editor state by default

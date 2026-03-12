@@ -7,7 +7,7 @@ import base64
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, Qt, QUrl, QByteArray, QTimer, QSize
+from PySide6.QtCore import QProcess, Qt, QUrl, QByteArray, QTimer, QSize, Signal
 from PySide6.QtGui import QPixmap, QDesktopServices, QPainter, QTextCursor, QKeySequence, QShortcut, QTextDocument, QColor, QBrush, QTransform, QIcon, QPen
 from PIL import Image
 from PIL.ImageQt import ImageQt
@@ -281,6 +281,52 @@ class ImageView(QGraphicsView):
         self.centerOn(self._scene.sceneRect().center())
 
 
+class ToggleSwitch(QWidget):
+    toggled = Signal(bool)
+
+    def __init__(self, checked: bool = False, parent=None):
+        super().__init__(parent)
+        self._checked = bool(checked)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedSize(44, 24)
+
+    def isChecked(self) -> bool:
+        return self._checked
+
+    def setChecked(self, checked: bool):
+        checked = bool(checked)
+        if self._checked == checked:
+            return
+        self._checked = checked
+        self.update()
+        self.toggled.emit(self._checked)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.setChecked(not self._checked)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        rect = self.rect().adjusted(1, 1, -1, -1)
+        track_color = QColor('#4f93e6') if self._checked else QColor('#d8e1eb')
+        border_color = QColor('#3e7fcd') if self._checked else QColor('#a8b8cb')
+        p.setPen(QPen(border_color, 1))
+        p.setBrush(track_color)
+        p.drawRoundedRect(rect, 12, 12)
+
+        knob_d = 18
+        knob_y = (self.height() - knob_d) // 2
+        knob_x = self.width() - knob_d - 3 if self._checked else 3
+        p.setPen(QPen(QColor('#cfd9e4'), 1))
+        p.setBrush(QColor('white'))
+        p.drawEllipse(knob_x, knob_y, knob_d, knob_d)
+        p.end()
+
+
 
 class PreviewWindow(QDialog):
     ADJUST_FIELDS = [
@@ -311,6 +357,7 @@ class PreviewWindow(QDialog):
         self.preview_pm: QPixmap | None = None
         self.show_original = False
         self.edit_stage: str | None = "input"
+        self.preview_compare_mode = True
         self._fit_on_next_refresh = True
 
         root = QVBoxLayout(self)
@@ -392,23 +439,73 @@ class PreviewWindow(QDialog):
         preview_layout = QVBoxLayout(preview_wrap)
         preview_layout.setContentsMargins(0, 0, 0, 0)
         preview_layout.setSpacing(6)
-        self.view = ImageView()
-        preview_layout.addWidget(self.view, 1)
+
+        self.preview_splitter = QSplitter(Qt.Horizontal)
+        self.preview_splitter.setChildrenCollapsible(False)
+
+        self.original_panel = QWidget()
+        original_layout = QVBoxLayout(self.original_panel)
+        original_layout.setContentsMargins(0, 0, 0, 0)
+        original_layout.setSpacing(4)
+        self.lb_original = QLabel("Original")
+        self.lb_original.setAlignment(Qt.AlignCenter)
+        self.lb_original.setStyleSheet("font-weight: 700; font-size: 13px; color: #173f6b; background: #e6f0fa; border: 1px solid #a8c1de; border-radius: 4px; padding: 4px 8px;")
+        self.original_view = ImageView()
+        original_layout.addWidget(self.lb_original)
+        original_layout.addWidget(self.original_view, 1)
+
+        self.adjusted_panel = QWidget()
+        adjusted_layout = QVBoxLayout(self.adjusted_panel)
+        adjusted_layout.setContentsMargins(0, 0, 0, 0)
+        adjusted_layout.setSpacing(4)
+        self.lb_adjusted = QLabel("Adjusted")
+        self.lb_adjusted.setAlignment(Qt.AlignCenter)
+        self.lb_adjusted.setStyleSheet("font-weight: 700; font-size: 13px; color: #173f6b; background: #e6f0fa; border: 1px solid #a8c1de; border-radius: 4px; padding: 4px 8px;")
+        self.preview_view = ImageView()
+        adjusted_layout.addWidget(self.lb_adjusted)
+        adjusted_layout.addWidget(self.preview_view, 1)
+
+        self.preview_splitter.addWidget(self.original_panel)
+        self.preview_splitter.addWidget(self.adjusted_panel)
+        self.preview_splitter.setSizes([1, 1])
+
+        preview_layout.addWidget(self.preview_splitter, 1)
+        status_row = QHBoxLayout()
+        status_row.setContentsMargins(0, 0, 0, 0)
+        status_row.setSpacing(8)
         self.lb_status = QLabel("No frame selected")
         self.lb_status.setStyleSheet("color: #355; font-style: italic;")
-        preview_layout.addWidget(self.lb_status)
+        status_row.addWidget(self.lb_status, 1)
+        self.mode_toggle_wrap = QWidget()
+        mode_layout = QHBoxLayout(self.mode_toggle_wrap)
+        mode_layout.setContentsMargins(0, 0, 0, 0)
+        mode_layout.setSpacing(8)
+        self.lb_mode_single = QLabel("Single")
+        self.lb_mode_single.setStyleSheet("color: #4d627a;")
+        self.chk_compare_mode = ToggleSwitch(True)
+        self.chk_compare_mode.setChecked(True)
+        self.chk_compare_mode.setToolTip("Toggle between single-image preview and side-by-side comparison.")
+        self.lb_mode_compare = QLabel("Compare")
+        self.lb_mode_compare.setStyleSheet("color: #173f6b; font-weight: 600;")
+        mode_layout.addWidget(self.lb_mode_single)
+        mode_layout.addWidget(self.chk_compare_mode)
+        mode_layout.addWidget(self.lb_mode_compare)
+        status_row.addWidget(self.mode_toggle_wrap, 0, Qt.AlignRight)
+        preview_layout.addLayout(status_row)
         body.addWidget(preview_wrap)
         body.setSizes([400, 1200])
 
         self.btn_hold_original.pressed.connect(self._show_original_pressed)
         self.btn_hold_original.released.connect(self._show_original_released)
-        self.btn_fit.clicked.connect(self.view.fit_to_view)
-        self.btn_zoom_100.clicked.connect(self.view.set_zoom_100)
+        self.chk_compare_mode.toggled.connect(self._set_preview_compare_mode)
+        self.btn_fit.clicked.connect(self._fit_preview_views)
+        self.btn_zoom_100.clicked.connect(self._set_preview_zoom_100)
         self.btn_reset.clicked.connect(self.reset_values)
 
         for name, *_ in self.ADJUST_FIELDS:
             getattr(self, f"sp_{name}").slider.valueChanged.connect(self._notify_values_changed)
 
+        self._set_preview_compare_mode(True)
         self._update_stage_action_styles()
 
     def _make_adjust_slider(self, minimum, maximum, value, suffix=""):
@@ -504,6 +601,25 @@ class PreviewWindow(QDialog):
         self.show_original = False
         self.refresh_display()
 
+    def _fit_preview_views(self):
+        self.original_view.fit_to_view()
+        self.preview_view.fit_to_view()
+
+    def _set_preview_zoom_100(self):
+        self.original_view.set_zoom_100()
+        self.preview_view.set_zoom_100()
+
+    def _set_preview_compare_mode(self, compare: bool):
+        self.preview_compare_mode = bool(compare)
+        if hasattr(self, "chk_compare_mode") and self.chk_compare_mode.isChecked() != self.preview_compare_mode:
+            self.chk_compare_mode.setChecked(self.preview_compare_mode)
+        self.lb_mode_single.setStyleSheet("color: #173f6b; font-weight: 600;" if not self.preview_compare_mode else "color: #4d627a;")
+        self.lb_mode_compare.setStyleSheet("color: #173f6b; font-weight: 600;" if self.preview_compare_mode else "color: #4d627a;")
+        self.original_panel.setVisible(self.preview_compare_mode)
+        if self.preview_compare_mode:
+            self.preview_splitter.setSizes([1, 1])
+        self.refresh_display()
+
     def reset_values(self):
         for name, *_ in self.ADJUST_FIELDS:
             getattr(self, f"sp_{name}").slider.setValue(0)
@@ -550,12 +666,20 @@ class PreviewWindow(QDialog):
         self.refresh_display()
 
     def refresh_display(self):
-        pm = self.original_pm if self.show_original else (self.preview_pm or self.original_pm)
-        if pm is None or pm.isNull():
-            self.view.clear_image()
-            return
+        original_pm = self.original_pm
+        adjusted_pm = self.original_pm if self.show_original else (self.preview_pm or self.original_pm)
         preserve = not self._fit_on_next_refresh
-        self.view.set_pixmap(pm, preserve_view=preserve)
+
+        if original_pm is None or original_pm.isNull():
+            self.original_view.clear_image()
+            self.preview_view.clear_image()
+            return
+
+        if self.preview_compare_mode:
+            self.original_view.set_pixmap(original_pm, preserve_view=preserve)
+            self.preview_view.set_pixmap(adjusted_pm, preserve_view=preserve)
+        else:
+            self.preview_view.set_pixmap(adjusted_pm, preserve_view=preserve)
         self._fit_on_next_refresh = False
 
     def closeEvent(self, event):
