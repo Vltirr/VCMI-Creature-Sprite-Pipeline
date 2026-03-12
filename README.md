@@ -34,6 +34,8 @@ The `Image Adjustments` panel supports:
 - compact read-only summaries for `Input stage` and `Output stage`
 - per-stage `Preview/Edit` and `Reset` buttons
 - a dedicated external preview editor window for large live image inspection
+- optional side-by-side `Original` / `Adjusted` comparison in the preview editor
+- a `Single` / `Compare` mode toggle inside the preview editor
 - sliders in the preview editor centered at `0` for neutral GUI values
 
 ## Quick start (CLI)

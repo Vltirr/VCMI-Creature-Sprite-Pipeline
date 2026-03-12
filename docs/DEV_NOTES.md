@@ -41,19 +41,16 @@ Recent UI decisions worth preserving:
 
 ## Near-term UX backlog
 
-1) Preview window comparison mode:
-- add an optional persistent original-versus-adjusted comparison mode
-- likely side-by-side rather than a wipe slider
-
-2) Preview window polish:
+1) Preview window polish:
 - continue refining toolbar density and control placement
 - keep preview actions close to the image rather than at the bottom of the window
+- keep the `Single` / `Compare` mode selector visually obvious and low-friction
 
-3) Main window adjustments summary:
+2) Main window adjustments summary:
 - keep the compact `Input stage` / `Output stage` summary layout
 - avoid reintroducing full sliders into the main window unless there is a very strong reason
 
-4) Viewer ergonomics:
+3) Viewer ergonomics:
 - preserve zoom and scroll state reliably between sessions
 - keep the preview-launch entry point near the viewer tabs without interfering with canvas interaction
 
