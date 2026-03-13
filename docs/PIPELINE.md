@@ -2,7 +2,7 @@
 
 This project converts spritesheets or loose frames into:
 
-- final 450x400 creature frames for VCMI
+- processed creature frames in one or more resolutions (`1x`, `2x`, `3x`, `4x`)
 - per-creature animation JSON (`creature_id.json`)
 - incremental deploy into a VCMI mod folder (assets + merged JSON)
 
@@ -44,33 +44,47 @@ The GUI viewer assumes this convention for browsing.
 - The GUI offers live preview in a dedicated preview editor window using the currently selected viewer frame before writing files
 
 ### 3) Process frames
-`scripts/process_frames.py` reads frames and outputs 450x400 aligned sprites.
+`scripts/process_frames.py` reads frames and outputs aligned sprites for one requested target canvas.
 
 Key operations:
 - chroma key removal (`tol`, `feather`, `shrink`, `bg_mode`, `key_from`, `despill`)
 - scaling (keeps aspect ratio by default; optional small distortion via `prefer=none`)
-- alignment/anchoring into the 450x400 canvas using baseline/left-limit parameters
+- alignment/anchoring into the requested canvas using baseline/left-limit parameters
 - optional preview overlay alpha (`overlay_alpha`) for the preview PNGs
+
+The GUI currently orchestrates multi-resolution processing by calling `scripts/process_frames.py` multiple times, once per selected resolution:
+- `processed_root/1x/...`
+- `processed_root/2x/...`
+- `processed_root/3x/...`
+- `processed_root/4x/...`
+
+Auxiliary outputs:
+- `previews/<scale>x/...` remain separated by resolution
+- `cleaned_root/...` and `forced_root/...` are shared because they represent the same cleanup/base image regardless of final target scale
 
 ### 4) Adjust output (optional)
 `scripts/adjust_frames.py` can also run on `processed_root` after `scripts/process_frames.py`.
 
-- Reads `processed_root/<creature_id>/groupN/*.png`
+- Reads `processed_root/<scale>x/<creature_id>/groupN/*.png`
 - Writes the same folder structure to the selected output root
 - In the GUI, `Adjust Output` is an independent step and does not require `Process Frames`
+- In the GUI, `Adjust Output` currently runs across all selected processed resolutions
 - The GUI offers live preview in a dedicated preview editor window using the currently selected viewer frame before writing files
 
 ### 5) Build animation JSON
-`scripts/build_anim_json.py` scans `processed_root/creature_id/groupN/*.png` and writes `anim_json_root/<creature_id>.json`.
+`scripts/build_anim_json.py` scans `processed_root/1x/creature_id/groupN/*.png` and writes `anim_json_root/<creature_id>.json`.
 
 Important:
 - frame entries include the group folder, e.g. `group3/frame_012.png`
+- each generated sequence currently includes `"generateShadow": 1`
 - missing groups can be represented via fallbacks if configured in the script
 
 ### 6) Deploy
 `scripts/deploy_assets.py` copies PNGs into the mod assets root and merges JSON incrementally.
 
 Important:
+- `1x` assets deploy to the regular `sprites/...` tree
+- `2x`, `3x`, and `4x` assets deploy to sibling trees `sprites2x/...`, `sprites3x/...`, and `sprites4x/...`
 - deploy merges all groups present in the incoming JSON, even if only some groups had PNGs copied in this run
 
 ## GUI notes
@@ -109,3 +123,9 @@ Each stage includes:
 - preview does not write files to disk
 - file changes only happen when the corresponding pipeline step is run
 - opening preview from the viewer uses a neutral editor state by default
+
+### Viewer behavior
+
+- the viewer can browse `Processed`, `Previews`, `Cleaned`, `Forced`, and `Deployed` assets
+- for `Processed`, `Previews`, and `Deployed`, the GUI includes a resolution selector (`1x`, `2x`, `3x`, `4x`)
+- `Cleaned` and `Forced` remain shared across resolutions because they are not resolution-specific outputs

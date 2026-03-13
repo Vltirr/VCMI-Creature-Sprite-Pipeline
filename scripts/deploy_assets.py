@@ -26,6 +26,20 @@ def copy_pngs(src_dir: Path, dst_dir: Path):
             shutil.copy2(f, dst_dir / f.name)
 
 
+def sibling_scale_root(base_out_root: Path, scale: int) -> Path:
+    if scale == 1:
+        return base_out_root
+    parts = list(base_out_root.parts)
+    try:
+        idx = [p.lower() for p in parts].index("sprites")
+    except ValueError:
+        raise RuntimeError(
+            f"The deploy root must contain a 'sprites' path segment to derive sprites{scale}x siblings: {base_out_root}"
+        )
+    parts[idx] = f"sprites{scale}x"
+    return Path(*parts)
+
+
 def scan_asset_tree(root: Path):
     assets = {}
     for cdir in root.iterdir():
@@ -111,7 +125,10 @@ def normalize_sequences(seqs):
         except Exception:
             continue
         frames = s["frames"] if isinstance(s["frames"], list) else []
-        out.append({"group": g, "frames": frames})
+        entry = {"group": g, "frames": frames}
+        if "generateShadow" in s:
+            entry["generateShadow"] = s["generateShadow"]
+        out.append(entry)
     return out
 
 
@@ -129,7 +146,7 @@ def merge_animation_json(existing: dict, incoming: dict, groups_to_merge: set[in
     for s in inc_seqs:
         g = s["group"]
         if g in merge_groups:
-            ex_map[g] = {"group": g, "frames": s["frames"]}
+            ex_map[g] = dict(s)
 
     merged_seqs = [ex_map[g] for g in sorted(ex_map.keys())]
 
@@ -143,6 +160,9 @@ def merge_animation_json(existing: dict, incoming: dict, groups_to_merge: set[in
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--in_root", required=True)
+    ap.add_argument("--in_root_2x", default="")
+    ap.add_argument("--in_root_3x", default="")
+    ap.add_argument("--in_root_4x", default="")
     ap.add_argument("--out_root", required=True)
     ap.add_argument("--json_in", required=True)
     ap.add_argument("--json_out", required=True)
@@ -151,6 +171,9 @@ def main():
     args = ap.parse_args()
 
     in_root = Path(args.in_root)
+    in_root_2x = Path(args.in_root_2x) if args.in_root_2x else None
+    in_root_3x = Path(args.in_root_3x) if args.in_root_3x else None
+    in_root_4x = Path(args.in_root_4x) if args.in_root_4x else None
     out_root = Path(args.out_root)
     ensure_dir(out_root)
 
@@ -202,6 +225,44 @@ def main():
             copied_groups += 1
             touched_groups_by_creature.setdefault(c, set()).add(gid)
 
+    extra_scales = [
+        (2, in_root_2x),
+        (3, in_root_3x),
+        (4, in_root_4x),
+    ]
+    copied_groups_by_scale: dict[int, int] = {1: copied_groups}
+    for scale, scale_root in extra_scales:
+        if scale_root is None:
+            continue
+        if not scale_root.exists() or not scale_root.is_dir():
+            print(f"[WARN] {scale_root}: missing {scale}x input root -> skipped")
+            continue
+        scale_out_root = sibling_scale_root(out_root, scale)
+        ensure_dir(scale_out_root)
+        scale_assets = scan_asset_tree(scale_root)
+
+        if args.only_creature:
+            key = next((c for c in scale_assets.keys() if c.lower() == args.only_creature.lower()), None)
+            scale_assets = {key: scale_assets[key]} if key else {}
+        if args.only_group != -1:
+            filtered = {}
+            for c, groups in scale_assets.items():
+                if args.only_group in groups:
+                    filtered[c] = {args.only_group: groups[args.only_group]}
+            scale_assets = filtered
+
+        copied_groups_by_scale[scale] = 0
+        for c, groups in scale_assets.items():
+            for gid, src_gdir in groups.items():
+                pngs = [p for p in src_gdir.iterdir() if p.is_file() and p.suffix.lower() == ".png"]
+                if not pngs:
+                    continue
+                dst_gdir = scale_out_root / c / f"group{gid}"
+                rm_tree_if_exists(dst_gdir)
+                ensure_dir(dst_gdir)
+                copy_pngs(src_gdir, dst_gdir)
+                copied_groups_by_scale[scale] += 1
+
     # Merge JSON per creature (only touched groups)
     merged_count = 0
     for c, touched in touched_groups_by_creature.items():
@@ -228,6 +289,13 @@ def main():
         merged_count += 1
 
     print(f"[OK] deploy assets: {copied_groups} grupos copiados -> {out_root}")
+    for scale in [2, 3, 4]:
+        if scale in copied_groups_by_scale:
+            try:
+                scale_out_root = sibling_scale_root(out_root, scale)
+                print(f"[OK] deploy assets {scale}x: {copied_groups_by_scale[scale]} grupos copiados -> {scale_out_root}")
+            except RuntimeError as e:
+                print(f"[WARN] {e}")
     print(f"[OK] deploy json: {merged_count} criaturas mergeadas -> {json_out}")
 
 

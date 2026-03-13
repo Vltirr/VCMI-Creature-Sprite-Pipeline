@@ -391,9 +391,12 @@ def main():
     ap.add_argument("--in_root", required=True, help="Raíz con domCxx/groupN")
     ap.add_argument("--out_root", required=True, help="Salida frames 450x400 en misma estructura")
 
-    ap.add_argument("--clean_root", default="", help="Opcional: cleaned (alpha) en misma estructura")
-    ap.add_argument("--forced_root", default="", help="Opcional: forced bg (RGB) en misma estructura")
-    ap.add_argument("--force_bg", default="#FF00FF")
+    ap.add_argument("--clean_root", default="", help="Opcional: guarda el resultado tras remove-bg")
+    ap.add_argument("--forced_root", default="", help="Opcional: guarda el resultado tras force-bg")
+    ap.add_argument("--remove-bg", dest="remove_bg", action="store_true", help="Ejecuta chroma/key cleanup")
+    ap.add_argument("--reframe", action="store_true", help="Redimensiona, alinea y compone sobre canvas")
+    ap.add_argument("--force-bg", dest="force_bg", action="store_true", help="Compone el resultado actual sobre un fondo sólido")
+    ap.add_argument("--force-bg-color", default="#FF00FF", help="Color sólido usado por --force-bg, por ejemplo #FF00FF")
 
     ap.add_argument("--preview_root", default="", help="Opcional: previews en misma estructura")
     ap.add_argument("--hex_overlay", default="", help="Opcional: overlay 450x400")
@@ -436,6 +439,13 @@ def main():
 
     args = ap.parse_args()
 
+    if not (args.remove_bg or args.reframe or args.force_bg):
+        raise SystemExit("Debes indicar al menos una operación: --remove-bg, --reframe y/o --force-bg")
+    if args.reframe and (args.canvas_w <= 0 or args.canvas_h <= 0):
+        raise SystemExit("--reframe requiere --canvas_w y --canvas_h mayores que 0")
+    if args.preview_root and not args.reframe:
+        raise SystemExit("--preview_root sólo tiene sentido cuando se usa --reframe")
+
     in_root = Path(args.in_root)
     out_root = Path(args.out_root); out_root.mkdir(parents=True, exist_ok=True)
 
@@ -446,9 +456,9 @@ def main():
     forced_root = Path(args.forced_root) if args.forced_root else None
     if forced_root:
         forced_root.mkdir(parents=True, exist_ok=True)
-        force_bg_rgb = parse_hex_color(args.force_bg)
+        force_bg_rgb = parse_hex_color(args.force_bg_color)
     else:
-        force_bg_rgb = (255, 0, 255)
+        force_bg_rgb = parse_hex_color(args.force_bg_color)
 
     preview_root = Path(args.preview_root) if args.preview_root else None
     if preview_root:
@@ -498,79 +508,98 @@ def main():
         if pdir:
             pdir.mkdir(parents=True, exist_ok=True)
 
-        # Optional: manual key
+        # Prepare keying only when remove-bg is requested.
         manual_key_rgb = None
-        if args.key.lower() != "auto":
-            manual_key_rgb = parse_hex_color(args.key)
-
-        # If key_from == first, detect from first frame in THIS group
         group_key_rgb = None
-        if args.key.lower() == "auto" and args.key_from == "first":
-            first_img = Image.open(in_frames[0]).convert("RGBA")
-            group_key_rgb = detect_bg_color_from_borders(
-                first_img,
-                border=args.key_border,
-                sample_stride=1,
-                quant_step=args.key_quant,
-                alpha_min=args.key_alpha_min
-            )
-
-        for idx, frame_path in enumerate(in_frames):
-            img = Image.open(frame_path).convert("RGBA")
-
-            if manual_key_rgb is not None:
-                key_rgb = manual_key_rgb
-            elif args.key.lower() == "auto" and args.key_from == "each":
-                key_rgb = detect_bg_color_from_borders(
-                    img,
+        if args.remove_bg:
+            if args.key.lower() != "auto":
+                manual_key_rgb = parse_hex_color(args.key)
+            elif args.key_from == "first":
+                first_img = Image.open(in_frames[0]).convert("RGBA")
+                group_key_rgb = detect_bg_color_from_borders(
+                    first_img,
                     border=args.key_border,
                     sample_stride=1,
                     quant_step=args.key_quant,
                     alpha_min=args.key_alpha_min
                 )
-            else:
-                key_rgb = group_key_rgb if group_key_rgb is not None else (255, 0, 255)
 
-            # bg removal
-            if args.bg_mode == "global":
-                cleaned = chroma_key_soft_global(img, key_rgb, tol=max(0, args.tol), feather=max(0, args.feather))
-            else:
-                bg_mask = build_bg_mask_floodfill(img, key_rgb, tol=max(0, args.tol))
-                cleaned = apply_mask_soft_alpha(img, bg_mask, feather_px=max(0, args.feather_px))
+        for frame_path in in_frames:
+            img = Image.open(frame_path).convert("RGBA")
 
-            if args.despill:
-                cleaned = despill_magenta(cleaned, strength=0.6)
-            cleaned = alpha_shrink(cleaned, pixels=max(0, args.shrink))
+            current = img
+            force_preview_source = current
 
-            if cdir:
-                cleaned.save(cdir / frame_path.name)
+            if args.remove_bg:
+                if manual_key_rgb is not None:
+                    key_rgb = manual_key_rgb
+                elif args.key.lower() == "auto" and args.key_from == "each":
+                    key_rgb = detect_bg_color_from_borders(
+                        current,
+                        border=args.key_border,
+                        sample_stride=1,
+                        quant_step=args.key_quant,
+                        alpha_min=args.key_alpha_min
+                    )
+                else:
+                    key_rgb = group_key_rgb if group_key_rgb is not None else (255, 0, 255)
+
+                if args.bg_mode == "global":
+                    current = chroma_key_soft_global(current, key_rgb, tol=max(0, args.tol), feather=max(0, args.feather))
+                else:
+                    bg_mask = build_bg_mask_floodfill(current, key_rgb, tol=max(0, args.tol))
+                    current = apply_mask_soft_alpha(current, bg_mask, feather_px=max(0, args.feather_px))
+
+                if args.despill:
+                    current = despill_magenta(current, strength=0.6)
+                current = alpha_shrink(current, pixels=max(0, args.shrink))
+                force_preview_source = current
+
+                if cdir:
+                    current.save(cdir / frame_path.name)
 
             if fdir:
-                forced = composite_over_solid(cleaned, force_bg_rgb)
-                forced.save(fdir / frame_path.with_suffix(".png").name)
+                forced_preview = composite_over_solid(force_preview_source, force_bg_rgb)
+                forced_preview.save(fdir / frame_path.with_suffix(".png").name)
 
-            trimmed = trim_to_alpha(cleaned, margin=max(0, args.trim_margin))
-            normalized = resize_keep_aspect(trimmed, target_h=max(0, args.sprite_h), target_w=max(0, args.sprite_w), prefer=args.prefer)
+            if args.reframe:
+                trimmed = trim_to_alpha(current, margin=max(0, args.trim_margin))
+                normalized = resize_keep_aspect(
+                    trimmed,
+                    target_h=max(0, args.sprite_h),
+                    target_w=max(0, args.sprite_w),
+                    prefer=args.prefer,
+                )
 
-            canvas = paste_on_canvas(
-                normalized,
-                canvas_w=args.canvas_w,
-                canvas_h=args.canvas_h,
-                baseline_y=args.baseline_y,
-                x_mode=args.x_mode,
-                x_offset=args.x_offset,
-                left_limit_x=args.left_limit_x,
-                left_padding=args.left_padding,
-                anchor_alpha=args.anchor_alpha
-            )
+                current = paste_on_canvas(
+                    normalized,
+                    canvas_w=args.canvas_w,
+                    canvas_h=args.canvas_h,
+                    baseline_y=args.baseline_y,
+                    x_mode=args.x_mode,
+                    x_offset=args.x_offset,
+                    left_limit_x=args.left_limit_x,
+                    left_padding=args.left_padding,
+                    anchor_alpha=args.anchor_alpha
+                )
 
-            canvas.save(out_dir / frame_path.name)
+                if pdir:
+                    prev = draw_preview(current, hex_overlay, args.baseline_y, args.left_limit_x, args.overlay_alpha)
+                    prev.save(pdir / frame_path.name)
 
-            if pdir:
-                prev = draw_preview(canvas, hex_overlay, args.baseline_y, args.left_limit_x, args.overlay_alpha)
-                prev.save(pdir / frame_path.name)
+            if args.force_bg:
+                current = composite_over_solid(current, force_bg_rgb)
 
-        print(f"[OK] {creature_id} group{gid}: {len(in_frames)} frames procesados -> {out_dir}")
+            current.save(out_dir / frame_path.name)
+
+        ops = []
+        if args.remove_bg:
+            ops.append("remove-bg")
+        if args.reframe:
+            ops.append("reframe")
+        if args.force_bg:
+            ops.append("force-bg")
+        print(f"[OK] {creature_id} group{gid}: {len(in_frames)} frames procesados ({', '.join(ops)}) -> {out_dir}")
 
 
 if __name__ == "__main__":

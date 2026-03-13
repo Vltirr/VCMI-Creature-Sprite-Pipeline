@@ -4,8 +4,8 @@ A PySide6 GUI that orchestrates a Heroes III / VCMI creature sprite pipeline:
 
 - (Optional) Slice a spritesheet into frames
 - (Optional) Adjust input frames before processing
-- Process frames (chroma key removal, scaling, alignment into a 450x400 canvas)
-- (Optional) Adjust processed output frames
+- Process frames into one or more output resolutions (`1x`, `2x`, `3x`, `4x`)
+- (Optional) Adjust processed output frames across the selected processed resolutions
 - Build per-creature animation JSON (`<creature_id>.json`)
 - Deploy PNGs and incrementally merge JSON into a VCMI mod folder
 
@@ -29,6 +29,11 @@ The main configuration area includes:
 - `Process Frames Defaults` for `scripts/process_frames.py`
 - `Image Adjustments` with separate `Input stage` and `Output stage` controls
 
+The `Process Frames Defaults` panel now also includes output resolution selection:
+- `1x`, `2x`, `3x`, `4x`
+- processed outputs are written under `processed_root/<scale>x/<creature_id>/groupN/*.png`
+- JSON build and deploy still use `1x` as the primary source, while deploy can also copy `2x`, `3x`, and `4x` assets to `sprites2x`, `sprites3x`, and `sprites4x`
+
 The `Image Adjustments` panel supports:
 - independent `Adjust Input` and `Adjust Output` pipeline steps
 - compact read-only summaries for `Input stage` and `Output stage`
@@ -44,10 +49,11 @@ See `docs/SCRIPTS.md` for full parameters. Typical pipeline:
 
 - Slice: `py scripts/slice_sheet.py --in_sheet sheet.png --cols 5 --rows 5 --out_root input_root --creature goblin_darter --group 0`
 - Adjust input: `py scripts/adjust_frames.py --in_root input_root --out_root input_root --creature goblin_darter --brightness 110`
-- Process: `py scripts/process_frames.py --in_root input_root --out_root processed_root --creature goblin_darter`
-- Adjust output: `py scripts/adjust_frames.py --in_root processed_root --out_root processed_root --creature goblin_darter --sharpness 120`
-- Build JSON: `py scripts/build_anim_json.py --in_root processed_root --out_root anim_json_root --creature goblin_darter`
-- Deploy: `py scripts/deploy_assets.py --in_root processed_root --json_in anim_json_root --assets_out <mod_assets_root> --json_out <mod_json_root> --creature goblin_darter`
+- Process 1x: `py scripts/process_frames.py --in_root input_root --out_root processed_root/1x --remove-bg --reframe --canvas_w 450 --canvas_h 400 --baseline_y 263 --sprite_h 100`
+- Process 4x: `py scripts/process_frames.py --in_root input_root --out_root processed_root/4x --remove-bg --reframe --canvas_w 1800 --canvas_h 1600 --baseline_y 1052 --sprite_h 400`
+- Adjust output: `py scripts/adjust_frames.py --in_root processed_root/1x --out_root processed_root/1x --creature goblin_darter --sharpness 120`
+- Build JSON: `py scripts/build_anim_json.py --input_root processed_root/1x --output_root anim_json_root --basepath_prefix battle/`
+- Deploy: `py scripts/deploy_assets.py --in_root processed_root/1x --in_root_2x processed_root/2x --in_root_3x processed_root/3x --in_root_4x processed_root/4x --out_root <mod_assets_root> --json_in anim_json_root --json_out <mod_json_root>`
 
 ## Repository layout
 
@@ -66,6 +72,7 @@ See `docs/SCRIPTS.md` for full parameters. Typical pipeline:
 ## Troubleshooting (short)
 
 - JSON frames should include `groupN/`, e.g. `group3/frame_012.png`.
+- Deployed JSON sequences now include `generateShadow: 1`.
 - If you see halos after chroma key, tweak `--tol`, `--feather`, and `--shrink`, and try `--despill`.
 - If alignment feels off, adjust `baseline_y`, `left_limit_x`, and `left_padding`.
 - If `Adjust Input` or `Adjust Output` finds no PNGs for the selected scope, the GUI aborts that step and shows a warning popup.

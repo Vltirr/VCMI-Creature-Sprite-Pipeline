@@ -93,13 +93,13 @@ def build_creature_json(creature_id: str, basepath_prefix: str, creature_dir: Pa
         if not frames:
             print(f"[WARN] {creature_id}: falta group{gid} -> usando fallback '{fb_frame}' (de group{fb_group})")
             frames = [fb_frame]
-        sequences.append({"group": gid, "frames": frames})
+        sequences.append({"group": gid, "frames": frames, "generateShadow": 1})
 
     # Optional groups: only include if present and non-empty
     for gid in sorted(frames_by_group.keys()):
         if gid in REQUIRED_GROUPS:
             continue
-        sequences.append({"group": gid, "frames": frames_by_group[gid]})
+        sequences.append({"group": gid, "frames": frames_by_group[gid], "generateShadow": 1})
 
     return {
         "basepath": f"{basepath_prefix}{creature_id}/",

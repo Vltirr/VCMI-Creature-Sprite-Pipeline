@@ -135,6 +135,10 @@ class AppSettings:
     split_cols: int = 6
     split_rows: int = 6
     split_autocrop: bool = True
+    gen_1x: bool = True
+    gen_2x: bool = False
+    gen_3x: bool = False
+    gen_4x: bool = False
 
     input_brightness: int = 100
     input_contrast: int = 100
@@ -953,7 +957,7 @@ class PipelineRunner(QWidget):
         paths_tt = {
             "Scripts Folder": "Folder containing pipeline scripts (slice_sheet.py, process_frames.py, build_anim_json.py, deploy_assets.py).",
             "Input Root (Raw Frames)": "Working input folder. Expected structure: input_root/<creature_id>/groupN/*.png",
-            "Processed Root (450x400)": "Processed 450x400 outputs. Structure: processed_root/<creature_id>/groupN/*.png",
+            "Processed Root (All Scales)": "Base processed outputs root. Multi-resolution outputs are stored as processed_root/<scale>x/<creature_id>/groupN/*.png. The viewer, JSON build, deploy, and output adjustments currently use 1x.",
             "Anim Json Root (Generated)": "Where generated <creature_id>.json files are written.",
             "Mod Assets Root (Deploy PNGs)": "Destination root in your mod for battle PNGs (deploy target).",
             "Mod Json Root (Deploy Json)": "Destination root in your mod for <creature_id>.json files (deploy target).",
@@ -1019,7 +1023,7 @@ class PipelineRunner(QWidget):
 
         self.lb_scripts_dir, _ = add_path_row(0, "Scripts Folder", self.le_scripts_dir, True)
         self.lb_input_root, _ = add_path_row(1, "Input Root (Raw Frames)", self.le_input_root, True)
-        self.lb_processed_root, _ = add_path_row(2, "Processed Root (450x400)", self.le_processed_root, True)
+        self.lb_processed_root, _ = add_path_row(2, "Processed Root (All Scales)", self.le_processed_root, True)
         self.lb_anim_json_root, _ = add_path_row(3, "Anim Json Root (Generated)", self.le_anim_json_root, True)
         self.lb_mod_assets_root, _ = add_path_row(4, "Mod Assets Root (Deploy PNGs)", self.le_mod_assets_root, True)
         self.lb_mod_json_root, _ = add_path_row(5, "Mod Json Root (Deploy Json)", self.le_mod_json_root, True)
@@ -1280,6 +1284,8 @@ class PipelineRunner(QWidget):
         pr.setColumnStretch(3, 1)
         pr.setColumnStretch(4, 0)
         pr.setColumnStretch(5, 1)
+        pr.setColumnStretch(6, 0)
+        pr.setColumnStretch(7, 1)
 
         def add_param(row, col_pair, label_text, widget):
             if col_pair == 0:
@@ -1323,9 +1329,12 @@ class PipelineRunner(QWidget):
         lbl_bg.setStyleSheet("font-weight: 600;")
         lbl_prev = QLabel("Preview")
         lbl_prev.setStyleSheet("font-weight: 600;")
+        lbl_multi = QLabel("Output Resolutions")
+        lbl_multi.setStyleSheet("font-weight: 600;")
         pr.addWidget(lbl_pos, 0, 0, 1, 2)
         pr.addWidget(lbl_bg, 0, 2, 1, 2)
         pr.addWidget(lbl_prev, 0, 4, 1, 2)
+        pr.addWidget(lbl_multi, 0, 6, 1, 2)
 
         # ---- Position & Size (left column) ----
         add_param(1, 0, "Baseline Y", self.sp_baseline_y)
@@ -1345,6 +1354,17 @@ class PipelineRunner(QWidget):
 
         # ---- Preview (right column) ----
         add_param(1, 2, "Overlay Alpha", self.sp_overlay_alpha)
+
+        # ---- Output resolutions (far right) ----
+        self.chk_res_1x = QCheckBox("1x")
+        self.chk_res_2x = QCheckBox("2x")
+        self.chk_res_3x = QCheckBox("3x")
+        self.chk_res_4x = QCheckBox("4x")
+        self.chk_res_1x.setChecked(True)
+        pr.addWidget(self.chk_res_1x, 1, 6, 1, 2)
+        pr.addWidget(self.chk_res_2x, 2, 6, 1, 2)
+        pr.addWidget(self.chk_res_3x, 3, 6, 1, 2)
+        pr.addWidget(self.chk_res_4x, 4, 6, 1, 2)
 
         fill_layout.addWidget(self.params_body)
         outer.addWidget(self.params_fill)
@@ -1574,6 +1594,23 @@ class PipelineRunner(QWidget):
 
         self.btn_toggle_adjustments.toggled.connect(_toggle_adjustments)
 
+        self._syncing_panel_toggles = False
+
+        def _sync_open_panels(source: str, checked: bool):
+            if self._syncing_panel_toggles:
+                return
+            self._syncing_panel_toggles = True
+            try:
+                if source == "params" and self.btn_toggle_adjustments.isChecked() != checked:
+                    self.btn_toggle_adjustments.setChecked(checked)
+                elif source == "adjustments" and self.btn_toggle_params.isChecked() != checked:
+                    self.btn_toggle_params.setChecked(checked)
+            finally:
+                self._syncing_panel_toggles = False
+
+        self.btn_toggle_params.toggled.connect(lambda checked: _sync_open_panels("params", checked))
+        self.btn_toggle_adjustments.toggled.connect(lambda checked: _sync_open_panels("adjustments", checked))
+
         def _sync_params_row_height():
             try:
                 self.gb_params_outer.setMinimumHeight(0)
@@ -1647,12 +1684,17 @@ class PipelineRunner(QWidget):
         self.cb_view_source = QComboBox()
         self.cb_view_source.addItems([
             "Input (Raw Frames)",
-            "Processed (450x400)",
+            "Processed",
             "Previews",
             "Cleaned (Alpha)",
             "Forced (Solid BG)",
             "Deployed (Mod Assets)",
         ])
+        self.cb_view_scale = QComboBox()
+        self.cb_view_scale.addItem("1x", 1)
+        self.cb_view_scale.addItem("2x", 2)
+        self.cb_view_scale.addItem("3x", 3)
+        self.cb_view_scale.addItem("4x", 4)
 
         self.cb_view_creature = QComboBox()
         self.cb_view_group = QComboBox()
@@ -1665,6 +1707,8 @@ class PipelineRunner(QWidget):
 
         controls.addWidget(QLabel("Source"))
         controls.addWidget(self.cb_view_source)
+        controls.addWidget(QLabel("Resolution"))
+        controls.addWidget(self.cb_view_scale)
         controls.addWidget(self.btn_view_refresh)
 
 
@@ -1919,12 +1963,17 @@ class PipelineRunner(QWidget):
         self.chk_adjust_output.toggled.connect(self.refresh_ui_state)
         self.chk_json.toggled.connect(self.refresh_ui_state)
         self.chk_deploy.toggled.connect(self.refresh_ui_state)
+        self.chk_res_1x.toggled.connect(self.refresh_ui_state)
+        self.chk_res_2x.toggled.connect(self.refresh_ui_state)
+        self.chk_res_3x.toggled.connect(self.refresh_ui_state)
+        self.chk_res_4x.toggled.connect(self.refresh_ui_state)
 
         self.btn_steps_all.clicked.connect(self.steps_select_all)
         self.btn_steps_none.clicked.connect(self.steps_select_none)
 
         self.btn_view_refresh.clicked.connect(lambda: self.viewer_refresh_all(keep_selection=True))
         self.cb_view_source.currentIndexChanged.connect(lambda: self.viewer_refresh_all(keep_selection=True))
+        self.cb_view_scale.currentIndexChanged.connect(lambda: self.viewer_refresh_all(keep_selection=True))
         self.cb_view_creature.currentIndexChanged.connect(lambda: self.viewer_refresh_groups(keep_selection=True))
         self.cb_view_group.currentIndexChanged.connect(lambda: self.viewer_refresh_frames(keep_selection=True))
         self.cb_view_frame.currentIndexChanged.connect(self.viewer_load_selected)
@@ -2023,9 +2072,14 @@ class PipelineRunner(QWidget):
         tt(None, self.btn_toggle_params, "Show/Hide process_frames.py default parameters.")
         tt(None, self.btn_toggle_adjustments, "Show/Hide image adjustment controls.")
         tt(None, self.chk_despill, "Enable despill to reduce chroma spill (magenta/green).")
+        tt(None, self.chk_res_1x, "Generate 1x processed output. This is the currently used resolution for JSON, deploy, and output adjustments.")
+        tt(None, self.chk_res_2x, "Generate 2x processed output alongside any other selected resolutions.")
+        tt(None, self.chk_res_3x, "Generate 3x processed output alongside any other selected resolutions.")
+        tt(None, self.chk_res_4x, "Generate 4x processed output alongside any other selected resolutions.")
 
         # ---- Viewer controls ----
         tt(None, self.cb_view_source, "Select viewer source root (Input/Processed/Previews/Cleaned/Forced/Deployed).")
+        tt(None, self.cb_view_scale, "Select the resolution variant to browse for processed, preview, cleaned, or forced outputs.")
         tt(None, self.btn_view_refresh, "Refresh viewer lists (creature/group/frame).")
         tt(None, self.cb_view_creature, "Select creature folder under current source root.")
         tt(None, self.cb_view_group, "Select animation group (groupN).")
@@ -2184,6 +2238,102 @@ class PipelineRunner(QWidget):
         if group is not None:
             cmd += ["--group", str(group)]
         cmds.append(cmd)
+
+    def _selected_process_scales(self) -> list[int]:
+        scales = []
+        if getattr(self, "chk_res_1x", None) and self.chk_res_1x.isChecked():
+            scales.append(1)
+        if getattr(self, "chk_res_2x", None) and self.chk_res_2x.isChecked():
+            scales.append(2)
+        if getattr(self, "chk_res_3x", None) and self.chk_res_3x.isChecked():
+            scales.append(3)
+        if getattr(self, "chk_res_4x", None) and self.chk_res_4x.isChecked():
+            scales.append(4)
+        return scales
+
+    def _processed_scale_root(self, scale: int) -> str:
+        root = Path(self.s.processed_root)
+        return str(root / f"{scale}x")
+
+    def _aux_scale_root(self, folder_name: str, scale: int) -> str:
+        root = Path(self.s.processed_root)
+        return str(root.parent / folder_name / f"{scale}x")
+
+    def _deploy_scale_root(self, scale: int) -> Path | None:
+        root_text = self.le_mod_assets_root.text().strip()
+        if not is_nonempty(root_text):
+            return None
+        root = Path(root_text)
+        if scale == 1:
+            return root
+        parts = list(root.parts)
+        lowered = [p.lower() for p in parts]
+        if "sprites" not in lowered:
+            return root
+        idx = lowered.index("sprites")
+        parts[idx] = f"sprites{scale}x"
+        return Path(*parts)
+
+    def _build_process_command(
+        self,
+        in_root: str,
+        out_root: str,
+        *,
+        scale: int,
+        remove_bg: bool,
+        reframe: bool,
+        force_bg: bool,
+        clean_root: str = "",
+        forced_root: str = "",
+        preview_root: str = "",
+    ) -> list[str]:
+        s = self.s
+        creature, group = self._scope_values()
+        canvas_w = 450 * scale
+        canvas_h = 400 * scale
+
+        cmd = [
+            sys.executable, script_path(s.scripts_dir, "process_frames.py"),
+            "--in_root", in_root,
+            "--out_root", out_root,
+            "--key", "auto",
+            "--key_from", s.key_from,
+            "--bg_mode", s.bg_mode,
+            "--tol", str(s.tol),
+            "--feather", str(s.feather),
+            "--shrink", str(s.shrink),
+            "--canvas_w", str(canvas_w),
+            "--canvas_h", str(canvas_h),
+            "--baseline_y", str(s.baseline_y * scale),
+            "--sprite_h", str(s.sprite_h * scale if s.sprite_h > 0 else 0),
+            "--sprite_w", str(getattr(s, "sprite_w", 0) * scale if getattr(s, "sprite_w", 0) > 0 else 0),
+            "--prefer", str(getattr(s, "prefer", "height")),
+            "--x_mode", "left_limit",
+            "--left_limit_x", str(s.left_limit_x * scale),
+            "--left_padding", str(s.left_padding * scale),
+            "--overlay_alpha", str(s.overlay_alpha),
+        ]
+        if clean_root:
+            cmd += ["--clean_root", clean_root]
+        if forced_root:
+            cmd += ["--forced_root", forced_root]
+        if preview_root:
+            cmd += ["--preview_root", preview_root]
+        if remove_bg:
+            cmd += ["--remove-bg"]
+        if reframe:
+            cmd += ["--reframe"]
+        if force_bg:
+            cmd += ["--force-bg"]
+        if s.despill:
+            cmd += ["--despill"]
+        if s.hex_overlay.strip():
+            cmd += ["--hex_overlay", s.hex_overlay.strip()]
+        if creature:
+            cmd += ["--only_creature", creature]
+        if group is not None:
+            cmd += ["--only_group", str(group)]
+        return cmd
 
     def _stage_values_from_ui(self, stage: str) -> dict[str, int]:
         return {
@@ -2400,6 +2550,10 @@ class PipelineRunner(QWidget):
         self.cb_key_from.setCurrentText(s.key_from if s.key_from in ["each", "first"] else "each")
         self.cb_bg_mode.setCurrentText(s.bg_mode if s.bg_mode in ["global", "border"] else "global")
         self.sp_overlay_alpha.setValue(s.overlay_alpha)
+        self.chk_res_1x.setChecked(bool(getattr(s, "gen_1x", True)))
+        self.chk_res_2x.setChecked(bool(getattr(s, "gen_2x", False)))
+        self.chk_res_3x.setChecked(bool(getattr(s, "gen_3x", False)))
+        self.chk_res_4x.setChecked(bool(getattr(s, "gen_4x", False)))
         if hasattr(self, "le_canvas_bg"):
             self.le_canvas_bg.setText(getattr(s, "viewer_canvas_bg", "#404040"))
             self._apply_canvas_bg()
@@ -2448,6 +2602,10 @@ class PipelineRunner(QWidget):
         s.key_from = self.cb_key_from.currentText()
         s.bg_mode = self.cb_bg_mode.currentText()
         s.overlay_alpha = self.sp_overlay_alpha.value()
+        s.gen_1x = self.chk_res_1x.isChecked()
+        s.gen_2x = self.chk_res_2x.isChecked()
+        s.gen_3x = self.chk_res_3x.isChecked()
+        s.gen_4x = self.chk_res_4x.isChecked()
         if hasattr(self, "le_canvas_bg"):
             s.viewer_canvas_bg = self.le_canvas_bg.text().strip()
         try:
@@ -2669,18 +2827,21 @@ class PipelineRunner(QWidget):
         input_root = Path(self.le_input_root.text().strip()) if is_nonempty(self.le_input_root.text()) else None
         processed_root = Path(self.le_processed_root.text().strip()) if is_nonempty(self.le_processed_root.text()) else None
         mod_assets_root = Path(self.le_mod_assets_root.text().strip()) if is_nonempty(self.le_mod_assets_root.text()) else None
+        scale = int(self.cb_view_scale.currentData() or 1) if hasattr(self, "cb_view_scale") else 1
 
         if src.startswith("Input") and input_root:
             return input_root
         if src.startswith("Processed") and processed_root:
-            return processed_root
+            scale_root = processed_root / f"{scale}x"
+            return scale_root if scale_root.exists() else processed_root
         if src.startswith("Deployed") and mod_assets_root:
-            return mod_assets_root
+            return self._deploy_scale_root(scale)
 
         if processed_root:
             parent = processed_root.parent
             if src.startswith("Previews"):
-                return parent / "previews"
+                scale_root = parent / "previews" / f"{scale}x"
+                return scale_root if scale_root.exists() else (parent / "previews")
             if src.startswith("Cleaned"):
                 return parent / "cleaned_root"
             if src.startswith("Forced"):
@@ -3051,18 +3212,41 @@ class PipelineRunner(QWidget):
         if self.chk_process.isChecked():
             Path(self.s.input_root).mkdir(parents=True, exist_ok=True)
             Path(self.s.processed_root).mkdir(parents=True, exist_ok=True)
+            if not self._selected_process_scales():
+                QMessageBox.critical(self, "Error", "Process Frames requires at least one output resolution (1x, 2x, 3x or 4x).")
+                return False
 
         if self.chk_adjust_output.isChecked():
-            Path(self.s.processed_root).mkdir(parents=True, exist_ok=True)
-            if not self.chk_process.isChecked() and not self._require_scope_content(self.s.processed_root, "Adjust Output"):
+            selected_scales = self._selected_process_scales()
+            if not selected_scales:
+                QMessageBox.critical(self, "Error", "Adjust Output requires at least one selected process resolution.")
                 return False
+            if not self.chk_process.isChecked():
+                found_any = False
+                for scale in selected_scales:
+                    Path(self._processed_scale_root(scale)).mkdir(parents=True, exist_ok=True)
+                    if self._scope_has_png_content(self._processed_scale_root(scale)):
+                        found_any = True
+                if not found_any:
+                    QMessageBox.warning(
+                        self,
+                        "Adjust Output",
+                        "No PNG content was found for the selected scope in any selected processed resolution.\n\nThe 'Adjust Output' step will be aborted.",
+                    )
+                    return False
 
         if self.chk_json.isChecked():
             Path(self.s.anim_json_root).mkdir(parents=True, exist_ok=True)
+            if self.chk_process.isChecked() and 1 not in self._selected_process_scales():
+                QMessageBox.critical(self, "Error", "Build Json currently reads from 1x processed output, so 1x must be selected in Process Frames output resolutions.")
+                return False
 
         if self.chk_deploy.isChecked():
             if not self.s.mod_assets_root.strip() or not self.s.mod_json_root.strip():
                 QMessageBox.critical(self, "Error", "Deploy requires both Mod Assets Root and Mod Json Root.")
+                return False
+            if self.chk_process.isChecked() and 1 not in self._selected_process_scales():
+                QMessageBox.critical(self, "Error", "Deploy currently uses 1x processed output, so 1x must be selected in Process Frames output resolutions.")
                 return False
 
         return True
@@ -3090,45 +3274,27 @@ class PipelineRunner(QWidget):
             self._append_adjust_command(cmds, s.input_root, "input")
 
         if self.chk_process.isChecked():
-            cmd = [
-                sys.executable, script_path(s.scripts_dir, "process_frames.py"),
-                "--in_root", s.input_root,
-                "--out_root", s.processed_root,
-                "--clean_root", str(Path(s.processed_root).parent / "cleaned_root"),
-                "--forced_root", str(Path(s.processed_root).parent / "forced_root"),
-                "--preview_root", str(Path(s.processed_root).parent / "previews"),
-                "--key", "auto",
-                "--key_from", s.key_from,
-                "--bg_mode", s.bg_mode,
-                "--tol", str(s.tol),
-                "--feather", str(s.feather),
-                "--shrink", str(s.shrink),
-                "--baseline_y", str(s.baseline_y),
-                "--sprite_h", str(s.sprite_h),
-                "--sprite_w", str(getattr(s, "sprite_w", 0)),
-                "--prefer", str(getattr(s, "prefer", "height")),
-                "--x_mode", "left_limit",
-                "--left_limit_x", str(s.left_limit_x),
-                "--left_padding", str(s.left_padding),
-                "--overlay_alpha", str(s.overlay_alpha),
-            ]
-            if s.despill:
-                cmd += ["--despill"]
-            if s.hex_overlay.strip():
-                cmd += ["--hex_overlay", s.hex_overlay.strip()]
-            if creature:
-                cmd += ["--only_creature", creature]
-            if group is not None:
-                cmd += ["--only_group", str(group)]
-            cmds.append(cmd)
+            for scale in self._selected_process_scales():
+                cmds.append(self._build_process_command(
+                    s.input_root,
+                    self._processed_scale_root(scale),
+                    scale=scale,
+                    remove_bg=True,
+                    reframe=True,
+                    force_bg=False,
+                    clean_root=str(Path(s.processed_root).parent / "cleaned_root"),
+                    forced_root=str(Path(s.processed_root).parent / "forced_root"),
+                    preview_root=self._aux_scale_root("previews", scale),
+                ))
 
         if self.chk_adjust_output.isChecked():
-            self._append_adjust_command(cmds, s.processed_root, "output")
+            for scale in self._selected_process_scales():
+                self._append_adjust_command(cmds, self._processed_scale_root(scale), "output")
 
         if self.chk_json.isChecked():
             cmd = [
                 sys.executable, script_path(s.scripts_dir, "build_anim_json.py"),
-                "--input_root", s.processed_root,
+                "--input_root", self._processed_scale_root(1),
                 "--output_root", s.anim_json_root,
                 "--basepath_prefix", "battle/",
             ]
@@ -3137,11 +3303,14 @@ class PipelineRunner(QWidget):
         if self.chk_deploy.isChecked():
             cmd = [
                 sys.executable, script_path(s.scripts_dir, "deploy_assets.py"),
-                "--in_root", s.processed_root,
+                "--in_root", self._processed_scale_root(1),
                 "--out_root", s.mod_assets_root,
                 "--json_in", s.anim_json_root,
                 "--json_out", s.mod_json_root,
             ]
+            for scale in [2, 3, 4]:
+                if scale in self._selected_process_scales():
+                    cmd += [f"--in_root_{scale}x", self._processed_scale_root(scale)]
             if creature:
                 cmd += ["--only_creature", creature]
             if group is not None:

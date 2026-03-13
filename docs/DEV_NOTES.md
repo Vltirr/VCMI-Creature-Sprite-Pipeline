@@ -53,6 +53,7 @@ Recent UI decisions worth preserving:
 3) Viewer ergonomics:
 - preserve zoom and scroll state reliably between sessions
 - keep the preview-launch entry point near the viewer tabs without interfering with canvas interaction
+- continue polishing multi-resolution browsing so scale selection stays obvious but low-noise
 
 ## Documentation conventions
 
@@ -74,6 +75,17 @@ Design direction:
 - separate the concept of a master resolution from derived resolutions
 - keep folder conventions explicit enough that inputs, processed masters, and derived outputs do not become ambiguous
 - avoid a layout where multiple resolutions are mixed together without a clear naming or directory strategy
+
+Current implementation status:
+- the GUI can already generate `1x`, `2x`, `3x`, and `4x` processed outputs by orchestrating repeated calls to `scripts/process_frames.py`
+- processed outputs are stored under `processed_root/<scale>x/...`
+- previews are stored under `previews/<scale>x/...`
+- cleaned and forced helper outputs are intentionally shared across resolutions
+- JSON build and deploy currently treat `1x` as the primary source, while deploy can also copy `2x/3x/4x` assets into `sprites2x/3x/4x`
+
+Still to do:
+- make the “4x as master” workflow explicit in the UI
+- add a user-friendly way to regenerate lower resolutions from an already edited higher-resolution baseline
 
 ### 2) Independently runnable process stages
 
