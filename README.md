@@ -21,7 +21,7 @@ A PySide6 GUI that orchestrates a Heroes III / VCMI creature sprite pipeline:
    - install from `requirements.txt`: `pip install -r requirements.txt`
 2. Run the app:
    - `py app.py`
-3. Set your paths (Scripts/Input/Processed/Anim JSON/Mod roots) and click **Save**.
+3. Set your paths (Scripts/Inputs/Outputs/Anim JSON/Mod roots) and click **Save**.
 4. Select a creature scope (`creature_id`) and optionally a group.
 5. Tick the steps you want and press **RUN**.
 
@@ -29,9 +29,13 @@ The main configuration area includes:
 - `Process Frames Defaults` for `scripts/process_frames.py`
 - `Image Adjustments` with separate `Input stage` and `Output stage` controls
 
-The `Process Frames Defaults` panel now also includes output resolution selection:
+The `Process Frames Defaults` panel now includes operation toggles and output resolution selection:
+- `Remove Background`
+- `Reframe`
+- `Force Background` helper output
 - `1x`, `2x`, `3x`, `4x`
-- processed outputs are written under `processed_root/<scale>x/<creature_id>/groupN/*.png`
+- processed outputs are written under `outputs/<scale>x/<creature_id>/groupN/*.png`
+- `cleaned_alpha/` and `forced_bg/` are shared helper outputs
 - JSON build and deploy still use `1x` as the primary source, while deploy can also copy `2x`, `3x`, and `4x` assets to `sprites2x`, `sprites3x`, and `sprites4x`
 
 The `Image Adjustments` panel supports:
@@ -47,13 +51,13 @@ The `Image Adjustments` panel supports:
 
 See `docs/SCRIPTS.md` for full parameters. Typical pipeline:
 
-- Slice: `py scripts/slice_sheet.py --in_sheet sheet.png --cols 5 --rows 5 --out_root input_root --creature goblin_darter --group 0`
-- Adjust input: `py scripts/adjust_frames.py --in_root input_root --out_root input_root --creature goblin_darter --brightness 110`
-- Process 1x: `py scripts/process_frames.py --in_root input_root --out_root processed_root/1x --remove-bg --reframe --canvas_w 450 --canvas_h 400 --baseline_y 263 --sprite_h 100`
-- Process 4x: `py scripts/process_frames.py --in_root input_root --out_root processed_root/4x --remove-bg --reframe --canvas_w 1800 --canvas_h 1600 --baseline_y 1052 --sprite_h 400`
-- Adjust output: `py scripts/adjust_frames.py --in_root processed_root/1x --out_root processed_root/1x --creature goblin_darter --sharpness 120`
-- Build JSON: `py scripts/build_anim_json.py --input_root processed_root/1x --output_root anim_json_root --basepath_prefix battle/`
-- Deploy: `py scripts/deploy_assets.py --in_root processed_root/1x --in_root_2x processed_root/2x --in_root_3x processed_root/3x --in_root_4x processed_root/4x --out_root <mod_assets_root> --json_in anim_json_root --json_out <mod_json_root>`
+- Slice: `py scripts/slice_sheet.py --in_sheet sheet.png --cols 5 --rows 5 --out_root inputs --creature goblin_darter --group 0`
+- Adjust input: `py scripts/adjust_frames.py --in_root inputs --out_root inputs --creature goblin_darter --brightness 110`
+- Process 1x: `py scripts/process_frames.py --in_root inputs --out_root outputs/1x --remove-bg --reframe --canvas_w 450 --canvas_h 400 --baseline_y 263 --sprite_h 100`
+- Process 4x: `py scripts/process_frames.py --in_root inputs --out_root outputs/4x --remove-bg --reframe --canvas_w 1800 --canvas_h 1600 --baseline_y 1052 --sprite_h 400`
+- Adjust output: `py scripts/adjust_frames.py --in_root outputs/1x --out_root outputs/1x --creature goblin_darter --sharpness 120`
+- Build JSON: `py scripts/build_anim_json.py --input_root outputs/1x --output_root anim_json_root --basepath_prefix battle/`
+- Deploy: `py scripts/deploy_assets.py --in_root outputs/1x --in_root_2x outputs/2x --in_root_3x outputs/3x --in_root_4x outputs/4x --out_root <mod_assets_root>/sprites --json_in anim_json_root --json_out <mod_json_root>`
 
 ## Repository layout
 

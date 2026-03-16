@@ -3,7 +3,7 @@ import json
 import re
 from pathlib import Path
 
-# Grupos según docs de VCMI (criaturas)
+# Animation groups according to the VCMI creature docs
 VALID_GROUPS = set(
     [0, 1, 2, 3, 4, 5, 6] +
     [7, 8, 9, 10] +
@@ -67,7 +67,7 @@ def build_creature_json(creature_id: str, basepath_prefix: str, creature_dir: Pa
     frames_by_group: dict[int, list[str]] = {}
     for gid, gdir in group_dirs.items():
         if gid not in VALID_GROUPS:
-            print(f"[WARN] {creature_id}: grupo desconocido {gid} ({gdir.name}) -> ignorado")
+            print(f"[WARN] {creature_id}: unknown group {gid} ({gdir.name}) -> skipped")
             continue
         frames = list_png_files(gdir)
         if frames:
@@ -75,13 +75,13 @@ def build_creature_json(creature_id: str, basepath_prefix: str, creature_dir: Pa
             frames_by_group[gid] = [f"{gdir.name}/{fn}" for fn in frames]
         else:
             if verbose:
-                print(f"[INFO] {creature_id}: {gdir.name} vacío -> omitido")
+                print(f"[INFO] {creature_id}: {gdir.name} is empty -> skipped")
 
     fb = pick_fallback(frames_by_group)
     if fb is None:
         raise RuntimeError(
-            f"{creature_id}: no se encontraron frames PNG en ningún grupo. "
-            f"No puedo rellenar los grupos requeridos 0..5."
+            f"{creature_id}: no PNG frames were found in any group. "
+            f"Cannot populate the required groups 0..5."
         )
     fb_group, fb_frame = fb
 
@@ -125,7 +125,7 @@ def main():
                            key=lambda p: natural_key(p.name))
 
     if not creature_dirs:
-        raise SystemExit(f"No se encontraron carpetas de criatura en {input_root}")
+        raise SystemExit(f"No creature folders were found under {input_root}")
 
     for cdir in creature_dirs:
         creature_id = cdir.name

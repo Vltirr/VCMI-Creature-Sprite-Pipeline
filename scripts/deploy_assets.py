@@ -47,7 +47,7 @@ def scan_asset_tree(root: Path):
             continue
         if not CREATURE_RE.match(cdir.name):
             if cdir.name.lower().startswith("domc") or cdir.name.lower().startswith("group"):
-                print(f"[WARN] carpeta ignorada (no criatura válida): {cdir}")
+                print(f"[WARN] skipping non-creature folder: {cdir}")
             continue
 
         creature = cdir.name
@@ -58,11 +58,11 @@ def scan_asset_tree(root: Path):
                 continue
             m = GROUP_RE.match(gdir.name)
             if not m:
-                print(f"[WARN] {creature}: carpeta ignorada (no groupN): {gdir.name}")
+                print(f"[WARN] {creature}: skipping non-groupN folder: {gdir.name}")
                 continue
             gid = int(m.group(1))
             if gid not in VALID_GROUPS:
-                print(f"[WARN] {creature}: group{gid} no válido -> ignorado")
+                print(f"[WARN] {creature}: invalid group{gid} -> skipped")
                 continue
             assets[creature][gid] = gdir
     return assets
@@ -104,7 +104,7 @@ def load_json_or_empty(path: Path) -> dict:
         try:
             return json.loads(relaxed)
         except json.JSONDecodeError as e:
-            raise RuntimeError(f"JSON inválido incluso tras limpiar comentarios: {path}\n{e}") from None
+            raise RuntimeError(f"Invalid JSON even after stripping comments: {path}\n{e}") from None
 
 
 def save_json(path: Path, data: dict):
@@ -182,9 +182,9 @@ def main():
     ensure_dir(json_out)
 
     if args.only_creature and not CREATURE_RE.match(args.only_creature):
-        raise SystemExit(f"--only_creature inválido: {args.only_creature}")
+        raise SystemExit(f"Invalid --only_creature: {args.only_creature}")
     if args.only_group != -1 and args.only_group not in VALID_GROUPS:
-        raise SystemExit(f"--only_group inválido/no permitido: {args.only_group}")
+        raise SystemExit(f"Invalid or unsupported --only_group: {args.only_group}")
 
     assets = scan_asset_tree(in_root)
 
@@ -192,7 +192,7 @@ def main():
     if args.only_creature:
         key = next((c for c in assets.keys() if c.lower() == args.only_creature.lower()), None)
         if not key:
-            raise SystemExit(f"No se encontró la criatura {args.only_creature} en {in_root}")
+            raise SystemExit(f"Creature {args.only_creature} was not found under {in_root}")
         assets = {key: assets[key]}
 
     if args.only_group != -1:
@@ -203,7 +203,7 @@ def main():
                 filtered[c] = {args.only_group: groups[args.only_group]}
                 found_any = True
         if not found_any:
-            raise SystemExit(f"No se encontró group{args.only_group} para el filtro en {in_root}")
+            raise SystemExit(f"group{args.only_group} was not found for the selected filter under {in_root}")
         assets = filtered
 
     copied_groups = 0
@@ -214,7 +214,7 @@ def main():
         for gid, src_gdir in groups.items():
             pngs = [p for p in src_gdir.iterdir() if p.is_file() and p.suffix.lower() == ".png"]
             if not pngs:
-                print(f"[WARN] {c} group{gid}: sin PNGs -> omitido")
+                print(f"[WARN] {c} group{gid}: no PNGs found -> skipped")
                 continue
 
             dst_gdir = out_root / c / f"group{gid}"
@@ -288,12 +288,12 @@ def main():
         save_json(out_path, merged)
         merged_count += 1
 
-    print(f"[OK] deploy assets: {copied_groups} grupos copiados -> {out_root}")
+    print(f"[OK] deploy assets: copied {copied_groups} groups -> {out_root}")
     for scale in [2, 3, 4]:
         if scale in copied_groups_by_scale:
             try:
                 scale_out_root = sibling_scale_root(out_root, scale)
-                print(f"[OK] deploy assets {scale}x: {copied_groups_by_scale[scale]} grupos copiados -> {scale_out_root}")
+                print(f"[OK] deploy assets {scale}x: copied {copied_groups_by_scale[scale]} groups -> {scale_out_root}")
             except RuntimeError as e:
                 print(f"[WARN] {e}")
     print(f"[OK] deploy json: {merged_count} criaturas mergeadas -> {json_out}")

@@ -67,41 +67,30 @@ Recent UI decisions worth preserving:
 
 Goal:
 - support VCMI asset generation for `1x`, `2x`, `3x`, and `4x`
-- treat `4x` as the master working resolution
-- generate lower resolutions from the same run when desired
-- allow regenerating `3x`, `2x`, and `1x` from an already edited `4x` baseline
-
-Design direction:
-- separate the concept of a master resolution from derived resolutions
-- keep folder conventions explicit enough that inputs, processed masters, and derived outputs do not become ambiguous
-- avoid a layout where multiple resolutions are mixed together without a clear naming or directory strategy
+- allow the GUI to orchestrate whichever output scales are selected
+- keep folder conventions explicit enough that multi-resolution outputs stay easy to reason about
 
 Current implementation status:
 - the GUI can already generate `1x`, `2x`, `3x`, and `4x` processed outputs by orchestrating repeated calls to `scripts/process_frames.py`
-- processed outputs are stored under `processed_root/<scale>x/...`
+- processed outputs are stored under `outputs/<scale>x/...`
 - previews are stored under `previews/<scale>x/...`
-- cleaned and forced helper outputs are intentionally shared across resolutions
+- cleaned and forced helper outputs are intentionally shared across resolutions as `cleaned_alpha/...` and `forced_bg/...`
 - JSON build and deploy currently treat `1x` as the primary source, while deploy can also copy `2x/3x/4x` assets into `sprites2x/3x/4x`
-
-Still to do:
-- make the “4x as master” workflow explicit in the UI
-- add a user-friendly way to regenerate lower resolutions from an already edited higher-resolution baseline
 
 ### 2) Independently runnable process stages
 
 Goal:
 - make `process_frames` operations runnable independently instead of only as one monolithic step
 
-Candidate operations:
-- chroma removal
-- resize / scale
-- alignment / reframing into target canvas
-- forced solid background generation
+Current GUI-aligned operations:
+- background removal
+- reframing into explicit canvases
+- forced background helper generation
 
 Design direction:
 - the GUI should be able to compose these operations as needed
-- this is especially important for a `4x`-master workflow where edited frames may need only partial regeneration afterwards
-- longer term, this likely argues for splitting `process_frames.py` into reusable core operations with a thin orchestration layer on top
+- helper outputs should stay clearly separate from main processed outputs
+- longer term, this still argues for splitting `process_frames.py` into reusable core operations with a thin orchestration layer on top
 
 ### 3) Hierarchical settings
 

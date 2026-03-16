@@ -106,8 +106,8 @@ def group_label(gid: int) -> str:
 @dataclass
 class AppSettings:
     scripts_dir: str = "./scripts"
-    input_root: str = "./input_root"
-    processed_root: str = "./processed_root"
+    input_root: str = "./inputs"
+    processed_root: str = "./outputs"
     anim_json_root: str = "./anim_json"
     mod_assets_root: str = ""
     mod_json_root: str = ""
@@ -139,6 +139,10 @@ class AppSettings:
     gen_2x: bool = False
     gen_3x: bool = False
     gen_4x: bool = False
+    process_remove_bg: bool = True
+    process_reframe: bool = True
+    process_force_bg_output: bool = True
+    process_force_bg_color: str = "#FF00FF"
 
     input_brightness: int = 100
     input_contrast: int = 100
@@ -956,12 +960,13 @@ class PipelineRunner(QWidget):
         # Tooltip text helpers (keep these in sync with SCRIPTS_DOC.md)
         paths_tt = {
             "Scripts Folder": "Folder containing pipeline scripts (slice_sheet.py, process_frames.py, build_anim_json.py, deploy_assets.py).",
-            "Input Root (Raw Frames)": "Working input folder. Expected structure: input_root/<creature_id>/groupN/*.png",
-            "Processed Root (All Scales)": "Base processed outputs root. Multi-resolution outputs are stored as processed_root/<scale>x/<creature_id>/groupN/*.png. The viewer, JSON build, deploy, and output adjustments currently use 1x.",
+            "Inputs": "Working input folder. Expected structure: inputs/<creature_id>/groupN/*.png",
+            "Outputs": "Base processed outputs folder. Multi-resolution outputs are stored as outputs/<scale>x/<creature_id>/groupN/*.png. The viewer, JSON build, deploy, and output adjustments currently use 1x.",
             "Anim Json Root (Generated)": "Where generated <creature_id>.json files are written.",
             "Mod Assets Root (Deploy PNGs)": "Destination root in your mod for battle PNGs (deploy target).",
             "Mod Json Root (Deploy Json)": "Destination root in your mod for <creature_id>.json files (deploy target).",
             "Hex Overlay (Optional PNG)": "Optional 450x400 PNG overlay (hex guide) used by previews in process_frames.py.",
+            "Force Background Color": "Solid color used for the forced background helper output.",
         }
 
         params_tt = {
@@ -975,7 +980,6 @@ class PipelineRunner(QWidget):
             "Feather": "Edge feather/softening (0-255). Higher = smoother, softer alpha edge (reduces jaggies) but can look blurry or expand semi-transparent halo; lower = crisper edge but can look rough. Most noticeable with bg_mode=border.",
             "Shrink": "Alpha erosion (0=off). Helps reduce halos but can eat thin details.",
             "Key From": "Background key sampling: each frame or first frame of group.",
-            "Overlay Alpha": "Opacity of the hex overlay in previews (0-255).",
             "Bg Mode": "Background removal mode: global (anywhere) or border (flood-fill from edges).",
             "Despill": "Reduces magenta/green spill from chroma key backgrounds.",
         }
@@ -1022,8 +1026,8 @@ class PipelineRunner(QWidget):
             return lab, le
 
         self.lb_scripts_dir, _ = add_path_row(0, "Scripts Folder", self.le_scripts_dir, True)
-        self.lb_input_root, _ = add_path_row(1, "Input Root (Raw Frames)", self.le_input_root, True)
-        self.lb_processed_root, _ = add_path_row(2, "Processed Root (All Scales)", self.le_processed_root, True)
+        self.lb_input_root, _ = add_path_row(1, "Inputs", self.le_input_root, True)
+        self.lb_processed_root, _ = add_path_row(2, "Outputs", self.le_processed_root, True)
         self.lb_anim_json_root, _ = add_path_row(3, "Anim Json Root (Generated)", self.le_anim_json_root, True)
         self.lb_mod_assets_root, _ = add_path_row(4, "Mod Assets Root (Deploy PNGs)", self.le_mod_assets_root, True)
         self.lb_mod_json_root, _ = add_path_row(5, "Mod Json Root (Deploy Json)", self.le_mod_json_root, True)
@@ -1276,34 +1280,22 @@ class PipelineRunner(QWidget):
         self.params_body = QWidget()
         self.params_body.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         pr = QGridLayout(self.params_body)
-        pr.setHorizontalSpacing(10)
+        pr.setHorizontalSpacing(12)
         pr.setVerticalSpacing(6)
-        pr.setColumnStretch(0, 0)
-        pr.setColumnStretch(1, 1)
-        pr.setColumnStretch(2, 0)
-        pr.setColumnStretch(3, 1)
-        pr.setColumnStretch(4, 0)
-        pr.setColumnStretch(5, 1)
-        pr.setColumnStretch(6, 0)
-        pr.setColumnStretch(7, 1)
+        for col in range(8):
+            pr.setColumnStretch(col, 0 if col % 2 == 0 else 1)
 
-        def add_param(row, col_pair, label_text, widget):
-            if col_pair == 0:
-                col = 0
-            elif col_pair == 1:
-                col = 2
-            else:
-                col = 4
+        def add_param_at(row, col, label_text, widget, *, min_width=110):
             lab = QLabel(label_text)
             lab.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            lab.setMinimumWidth(110)
+            lab.setMinimumWidth(min_width)
             tip = params_tt.get(label_text, "")
             if tip:
                 lab.setToolTip(tip)
                 widget.setToolTip(tip)
             pr.addWidget(lab, row, col, alignment=Qt.AlignLeft)
             pr.addWidget(widget, row, col + 1, alignment=Qt.AlignLeft)
-            widget.setMinimumWidth(120)
+            widget.setMinimumWidth(110)
             return lab, widget
 
         self.sp_baseline_y = QSpinBox(); self.sp_baseline_y.setRange(0, 10000)
@@ -1317,54 +1309,66 @@ class PipelineRunner(QWidget):
         self.sp_feather = QSpinBox(); self.sp_feather.setRange(0, 255)
         self.sp_shrink = QSpinBox(); self.sp_shrink.setRange(0, 10)
 
+        self.chk_remove_bg = QCheckBox("Remove Background")
+        self.chk_remove_bg.setChecked(True)
+        self.chk_reframe = QCheckBox("Reframe")
+        self.chk_reframe.setChecked(True)
+        self.chk_force_bg_output = QCheckBox("Force Background")
+        self.chk_force_bg_output.setChecked(True)
+
         self.chk_despill = QCheckBox("Despill")
         self.cb_key_from = QComboBox(); self.cb_key_from.addItems(["each", "first"])
         self.cb_bg_mode = QComboBox(); self.cb_bg_mode.addItems(["global", "border"])
-        self.sp_overlay_alpha = QSpinBox(); self.sp_overlay_alpha.setRange(0, 255)
 
-        # ---- Group headers ----
-        lbl_pos = QLabel("Position & Size")
-        lbl_pos.setStyleSheet("font-weight: 600;")
-        lbl_bg = QLabel("Background Removal")
-        lbl_bg.setStyleSheet("font-weight: 600;")
-        lbl_prev = QLabel("Preview")
-        lbl_prev.setStyleSheet("font-weight: 600;")
-        lbl_multi = QLabel("Output Resolutions")
-        lbl_multi.setStyleSheet("font-weight: 600;")
-        pr.addWidget(lbl_pos, 0, 0, 1, 2)
-        pr.addWidget(lbl_bg, 0, 2, 1, 2)
-        pr.addWidget(lbl_prev, 0, 4, 1, 2)
-        pr.addWidget(lbl_multi, 0, 6, 1, 2)
-
-        # ---- Position & Size (left column) ----
-        add_param(1, 0, "Baseline Y", self.sp_baseline_y)
-        add_param(2, 0, "Left Limit X", self.sp_left_limit_x)
-        add_param(3, 0, "Left Padding", self.sp_left_padding)
-        add_param(4, 0, "Sprite Height", self.sp_sprite_h)
-        add_param(5, 0, "Sprite Width", self.sp_sprite_w)
-        add_param(6, 0, "Dimension Preference", self.cb_prefer)
-
-        # ---- Background Removal (middle column) ----
-        add_param(1, 1, "Tolerance", self.sp_tol)
-        add_param(2, 1, "Feather", self.sp_feather)
-        add_param(3, 1, "Bg Mode", self.cb_bg_mode)
-        add_param(4, 1, "Shrink", self.sp_shrink)
-        add_param(5, 1, "Key From", self.cb_key_from)
-        pr.addWidget(self.chk_despill, 6, 2, 1, 2)
-
-        # ---- Preview (right column) ----
-        add_param(1, 2, "Overlay Alpha", self.sp_overlay_alpha)
-
-        # ---- Output resolutions (far right) ----
         self.chk_res_1x = QCheckBox("1x")
         self.chk_res_2x = QCheckBox("2x")
         self.chk_res_3x = QCheckBox("3x")
         self.chk_res_4x = QCheckBox("4x")
         self.chk_res_1x.setChecked(True)
-        pr.addWidget(self.chk_res_1x, 1, 6, 1, 2)
-        pr.addWidget(self.chk_res_2x, 2, 6, 1, 2)
-        pr.addWidget(self.chk_res_3x, 3, 6, 1, 2)
-        pr.addWidget(self.chk_res_4x, 4, 6, 1, 2)
+
+        self.le_force_bg_color = QLineEdit()
+        self.le_force_bg_color.setPlaceholderText("#FF00FF")
+        self.le_force_bg_color.setFixedWidth(92)
+        self.btn_force_bg_color = QToolButton()
+        self.btn_force_bg_color.setText("...")
+        self.btn_force_bg_color.setAutoRaise(True)
+        force_color_wrap = QWidget()
+        force_color_layout = QHBoxLayout(force_color_wrap)
+        force_color_layout.setContentsMargins(0, 0, 0, 0)
+        force_color_layout.setSpacing(6)
+        force_color_layout.addWidget(self.le_force_bg_color)
+        force_color_layout.addWidget(self.btn_force_bg_color)
+        force_color_layout.addStretch(1)
+        tip = paths_tt.get("Force Background Color", "")
+        if tip:
+            self.le_force_bg_color.setToolTip(tip)
+            self.btn_force_bg_color.setToolTip(tip)
+
+        pr.addWidget(self.chk_remove_bg, 0, 0, 1, 2, alignment=Qt.AlignLeft)
+        pr.addWidget(self.chk_reframe, 0, 2, 1, 2, alignment=Qt.AlignLeft)
+        pr.addWidget(self.chk_force_bg_output, 0, 6, 1, 2, alignment=Qt.AlignLeft)
+
+        add_param_at(1, 0, "Tolerance", self.sp_tol)
+        add_param_at(2, 0, "Feather", self.sp_feather)
+        add_param_at(3, 0, "Bg Mode", self.cb_bg_mode)
+        add_param_at(4, 0, "Shrink", self.sp_shrink)
+        add_param_at(5, 0, "Key From", self.cb_key_from)
+        pr.addWidget(self.chk_despill, 6, 0, 1, 2, alignment=Qt.AlignLeft)
+
+        add_param_at(1, 2, "Baseline Y", self.sp_baseline_y)
+        add_param_at(2, 2, "Left Limit X", self.sp_left_limit_x)
+        add_param_at(3, 2, "Left Padding", self.sp_left_padding)
+        add_param_at(4, 2, "Sprite Height", self.sp_sprite_h)
+        add_param_at(5, 2, "Sprite Width", self.sp_sprite_w)
+        add_param_at(6, 2, "Dimension Preference", self.cb_prefer)
+
+        pr.addWidget(self.chk_res_1x, 1, 4, 1, 2, alignment=Qt.AlignLeft)
+        pr.addWidget(self.chk_res_2x, 2, 4, 1, 2, alignment=Qt.AlignLeft)
+        pr.addWidget(self.chk_res_3x, 3, 4, 1, 2, alignment=Qt.AlignLeft)
+        pr.addWidget(self.chk_res_4x, 4, 4, 1, 2, alignment=Qt.AlignLeft)
+
+        pr.addWidget(QLabel("Color"), 1, 6, alignment=Qt.AlignLeft)
+        pr.addWidget(force_color_wrap, 1, 7, alignment=Qt.AlignLeft)
 
         fill_layout.addWidget(self.params_body)
         outer.addWidget(self.params_fill)
@@ -1683,12 +1687,12 @@ class PipelineRunner(QWidget):
 
         self.cb_view_source = QComboBox()
         self.cb_view_source.addItems([
-            "Input (Raw Frames)",
-            "Processed",
+            "Inputs",
+            "Outputs",
+            "Cleaned Alpha",
             "Previews",
-            "Cleaned (Alpha)",
-            "Forced (Solid BG)",
-            "Deployed (Mod Assets)",
+            "Forced Background",
+            "Deployed",
         ])
         self.cb_view_scale = QComboBox()
         self.cb_view_scale.addItem("1x", 1)
@@ -1963,6 +1967,9 @@ class PipelineRunner(QWidget):
         self.chk_adjust_output.toggled.connect(self.refresh_ui_state)
         self.chk_json.toggled.connect(self.refresh_ui_state)
         self.chk_deploy.toggled.connect(self.refresh_ui_state)
+        self.chk_remove_bg.toggled.connect(self.refresh_ui_state)
+        self.chk_reframe.toggled.connect(self.refresh_ui_state)
+        self.chk_force_bg_output.toggled.connect(self.refresh_ui_state)
         self.chk_res_1x.toggled.connect(self.refresh_ui_state)
         self.chk_res_2x.toggled.connect(self.refresh_ui_state)
         self.chk_res_3x.toggled.connect(self.refresh_ui_state)
@@ -1980,6 +1987,7 @@ class PipelineRunner(QWidget):
         self.btn_open_folder.clicked.connect(self.viewer_open_folder)
         self.btn_viewer_preview.clicked.connect(self._open_preview_window)
         self.btn_pick_canvas_bg.clicked.connect(self._pick_canvas_bg)
+        self.btn_force_bg_color.clicked.connect(self._pick_force_bg_color)
         self.le_canvas_bg.textChanged.connect(lambda _=None: self._apply_canvas_bg())
         self.btn_prev.clicked.connect(self.viewer_prev_frame)
         self.btn_next.clicked.connect(self.viewer_next_frame)
@@ -2024,6 +2032,13 @@ class PipelineRunner(QWidget):
             return
         self.le_canvas_bg.setText(c.name().upper())
         self._apply_canvas_bg()
+
+    def _pick_force_bg_color(self):
+        current = QColor(self.le_force_bg_color.text().strip() or "#FF00FF")
+        c = QColorDialog.getColor(current, parent=self)
+        if not c.isValid():
+            return
+        self.le_force_bg_color.setText(c.name().upper())
 
     # ---------------- Tooltips ----------------
     def _apply_tooltips(self):
@@ -2072,13 +2087,16 @@ class PipelineRunner(QWidget):
         tt(None, self.btn_toggle_params, "Show/Hide process_frames.py default parameters.")
         tt(None, self.btn_toggle_adjustments, "Show/Hide image adjustment controls.")
         tt(None, self.chk_despill, "Enable despill to reduce chroma spill (magenta/green).")
+        tt(None, self.chk_remove_bg, "Run chroma/key cleanup for Process Frames.")
+        tt(None, self.chk_reframe, "Resize, align, and compose the sprite onto the target canvas.")
+        tt(None, self.chk_force_bg_output, "Generate the forced background helper output in forced_bg using the selected color.")
         tt(None, self.chk_res_1x, "Generate 1x processed output. This is the currently used resolution for JSON, deploy, and output adjustments.")
         tt(None, self.chk_res_2x, "Generate 2x processed output alongside any other selected resolutions.")
         tt(None, self.chk_res_3x, "Generate 3x processed output alongside any other selected resolutions.")
         tt(None, self.chk_res_4x, "Generate 4x processed output alongside any other selected resolutions.")
 
         # ---- Viewer controls ----
-        tt(None, self.cb_view_source, "Select viewer source root (Input/Processed/Previews/Cleaned/Forced/Deployed).")
+        tt(None, self.cb_view_source, "Select viewer source root (Inputs/Outputs/Cleaned Alpha/Previews/Forced Background/Deployed).")
         tt(None, self.cb_view_scale, "Select the resolution variant to browse for processed, preview, cleaned, or forced outputs.")
         tt(None, self.btn_view_refresh, "Refresh viewer lists (creature/group/frame).")
         tt(None, self.cb_view_creature, "Select creature folder under current source root.")
@@ -2143,12 +2161,41 @@ class PipelineRunner(QWidget):
                 self.btn_toggle_params.setChecked(False)
             self._ensure_splitter_log_visible()
 
+        def sync_process_action_enabled():
+            bg_enabled = self.chk_remove_bg.isChecked()
+            self.sp_tol.setEnabled(bg_enabled)
+            self.sp_feather.setEnabled(bg_enabled)
+            self.cb_bg_mode.setEnabled(bg_enabled)
+            self.sp_shrink.setEnabled(bg_enabled)
+            self.cb_key_from.setEnabled(bg_enabled)
+            self.chk_despill.setEnabled(bg_enabled)
+
+            reframe_enabled = self.chk_reframe.isChecked()
+            self.sp_baseline_y.setEnabled(reframe_enabled)
+            self.sp_left_limit_x.setEnabled(reframe_enabled)
+            self.sp_left_padding.setEnabled(reframe_enabled)
+            self.sp_sprite_h.setEnabled(reframe_enabled)
+            self.sp_sprite_w.setEnabled(reframe_enabled)
+            self.cb_prefer.setEnabled(reframe_enabled)
+            self.chk_res_1x.setEnabled(reframe_enabled)
+            self.chk_res_2x.setEnabled(reframe_enabled)
+            self.chk_res_3x.setEnabled(reframe_enabled)
+            self.chk_res_4x.setEnabled(reframe_enabled)
+
+            force_enabled = self.chk_force_bg_output.isChecked()
+            self.le_force_bg_color.setEnabled(force_enabled)
+            self.btn_force_bg_color.setEnabled(force_enabled)
+
         def sync_adjustments_enabled():
             self.gb_adjust_input_stage.setEnabled(True)
             self.gb_adjust_output_stage.setEnabled(True)
 
         self.chk_process.toggled.connect(sync_params_enabled)
+        self.chk_remove_bg.toggled.connect(sync_process_action_enabled)
+        self.chk_reframe.toggled.connect(sync_process_action_enabled)
+        self.chk_force_bg_output.toggled.connect(sync_process_action_enabled)
         sync_params_enabled()
+        sync_process_action_enabled()
         sync_adjustments_enabled()
 
     def _format_adjust_display(self, value: int) -> str:
@@ -2316,7 +2363,7 @@ class PipelineRunner(QWidget):
         if clean_root:
             cmd += ["--clean_root", clean_root]
         if forced_root:
-            cmd += ["--forced_root", forced_root]
+            cmd += ["--forced_root", forced_root, "--force-bg-color", self.le_force_bg_color.text().strip() or "#FF00FF"]
         if preview_root:
             cmd += ["--preview_root", preview_root]
         if remove_bg:
@@ -2549,7 +2596,10 @@ class PipelineRunner(QWidget):
         self.chk_despill.setChecked(bool(s.despill))
         self.cb_key_from.setCurrentText(s.key_from if s.key_from in ["each", "first"] else "each")
         self.cb_bg_mode.setCurrentText(s.bg_mode if s.bg_mode in ["global", "border"] else "global")
-        self.sp_overlay_alpha.setValue(s.overlay_alpha)
+        self.chk_remove_bg.setChecked(bool(getattr(s, "process_remove_bg", True)))
+        self.chk_reframe.setChecked(bool(getattr(s, "process_reframe", True)))
+        self.chk_force_bg_output.setChecked(bool(getattr(s, "process_force_bg_output", True)))
+        self.le_force_bg_color.setText(getattr(s, "process_force_bg_color", "#FF00FF"))
         self.chk_res_1x.setChecked(bool(getattr(s, "gen_1x", True)))
         self.chk_res_2x.setChecked(bool(getattr(s, "gen_2x", False)))
         self.chk_res_3x.setChecked(bool(getattr(s, "gen_3x", False)))
@@ -2601,7 +2651,10 @@ class PipelineRunner(QWidget):
         s.despill = self.chk_despill.isChecked()
         s.key_from = self.cb_key_from.currentText()
         s.bg_mode = self.cb_bg_mode.currentText()
-        s.overlay_alpha = self.sp_overlay_alpha.value()
+        s.process_remove_bg = self.chk_remove_bg.isChecked()
+        s.process_reframe = self.chk_reframe.isChecked()
+        s.process_force_bg_output = self.chk_force_bg_output.isChecked()
+        s.process_force_bg_color = self.le_force_bg_color.text().strip()
         s.gen_1x = self.chk_res_1x.isChecked()
         s.gen_2x = self.chk_res_2x.isChecked()
         s.gen_3x = self.chk_res_3x.isChecked()
@@ -2760,8 +2813,8 @@ class PipelineRunner(QWidget):
         sd = Path(self.le_scripts_dir.text().strip() or "./scripts")
         base = sd.parent if sd.name.lower() == "scripts" else sd
 
-        self.le_input_root.setText(str((base / "input_root").resolve()))
-        self.le_processed_root.setText(str((base / "processed_root").resolve()))
+        self.le_input_root.setText(str((base / "inputs").resolve()))
+        self.le_processed_root.setText(str((base / "outputs").resolve()))
         self.le_anim_json_root.setText(str((base / "anim_json").resolve()))
 
         self.append_log("[INFO] Paths reset to defaults relative to scripts folder.", "info")
@@ -2792,8 +2845,8 @@ class PipelineRunner(QWidget):
         if processed.parent.exists():
             targets += [
                 processed,
-                processed.parent / "cleaned_root",
-                processed.parent / "forced_root",
+                processed.parent / "cleaned_alpha",
+                processed.parent / "forced_bg",
                 processed.parent / "previews",
             ]
         targets += [animjson]
@@ -2829,9 +2882,9 @@ class PipelineRunner(QWidget):
         mod_assets_root = Path(self.le_mod_assets_root.text().strip()) if is_nonempty(self.le_mod_assets_root.text()) else None
         scale = int(self.cb_view_scale.currentData() or 1) if hasattr(self, "cb_view_scale") else 1
 
-        if src.startswith("Input") and input_root:
+        if src.startswith("Inputs") and input_root:
             return input_root
-        if src.startswith("Processed") and processed_root:
+        if src.startswith("Outputs") and processed_root:
             scale_root = processed_root / f"{scale}x"
             return scale_root if scale_root.exists() else processed_root
         if src.startswith("Deployed") and mod_assets_root:
@@ -2843,9 +2896,9 @@ class PipelineRunner(QWidget):
                 scale_root = parent / "previews" / f"{scale}x"
                 return scale_root if scale_root.exists() else (parent / "previews")
             if src.startswith("Cleaned"):
-                return parent / "cleaned_root"
+                return parent / "cleaned_alpha"
             if src.startswith("Forced"):
-                return parent / "forced_root"
+                return parent / "forced_bg"
         return None
 
     def viewer_refresh_all(self, keep_selection: bool = True):
@@ -3212,6 +3265,17 @@ class PipelineRunner(QWidget):
         if self.chk_process.isChecked():
             Path(self.s.input_root).mkdir(parents=True, exist_ok=True)
             Path(self.s.processed_root).mkdir(parents=True, exist_ok=True)
+            if not (
+                self.chk_remove_bg.isChecked()
+                or self.chk_reframe.isChecked()
+                or self.chk_force_bg_output.isChecked()
+            ):
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    "Process Frames requires at least one action: Remove Background, Reframe, or Force Background.",
+                )
+                return False
             if not self._selected_process_scales():
                 QMessageBox.critical(self, "Error", "Process Frames requires at least one output resolution (1x, 2x, 3x or 4x).")
                 return False
@@ -3240,6 +3304,9 @@ class PipelineRunner(QWidget):
             if self.chk_process.isChecked() and 1 not in self._selected_process_scales():
                 QMessageBox.critical(self, "Error", "Build Json currently reads from 1x processed output, so 1x must be selected in Process Frames output resolutions.")
                 return False
+            if self.chk_process.isChecked() and not self.chk_reframe.isChecked():
+                QMessageBox.critical(self, "Error", "Build Json currently requires Reframe to be enabled because it reads from processed output canvases.")
+                return False
 
         if self.chk_deploy.isChecked():
             if not self.s.mod_assets_root.strip() or not self.s.mod_json_root.strip():
@@ -3247,6 +3314,9 @@ class PipelineRunner(QWidget):
                 return False
             if self.chk_process.isChecked() and 1 not in self._selected_process_scales():
                 QMessageBox.critical(self, "Error", "Deploy currently uses 1x processed output, so 1x must be selected in Process Frames output resolutions.")
+                return False
+            if self.chk_process.isChecked() and not self.chk_reframe.isChecked():
+                QMessageBox.critical(self, "Error", "Deploy currently requires Reframe to be enabled because it copies processed output canvases.")
                 return False
 
         return True
@@ -3279,12 +3349,12 @@ class PipelineRunner(QWidget):
                     s.input_root,
                     self._processed_scale_root(scale),
                     scale=scale,
-                    remove_bg=True,
-                    reframe=True,
+                    remove_bg=self.chk_remove_bg.isChecked(),
+                    reframe=self.chk_reframe.isChecked(),
                     force_bg=False,
-                    clean_root=str(Path(s.processed_root).parent / "cleaned_root"),
-                    forced_root=str(Path(s.processed_root).parent / "forced_root"),
-                    preview_root=self._aux_scale_root("previews", scale),
+                    clean_root=str(Path(s.processed_root).parent / "cleaned_alpha") if self.chk_remove_bg.isChecked() else "",
+                    forced_root=str(Path(s.processed_root).parent / "forced_bg") if self.chk_force_bg_output.isChecked() else "",
+                    preview_root=self._aux_scale_root("previews", scale) if self.chk_reframe.isChecked() else "",
                 ))
 
         if self.chk_adjust_output.isChecked():

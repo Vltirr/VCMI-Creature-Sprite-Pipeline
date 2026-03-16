@@ -24,7 +24,7 @@ Common parameters:
 
 Example:
 ```bash
-py scripts/slice_sheet.py --in_sheet sheet.png --cols 5 --rows 5 --out_root input_root --creature goblin_darter --group 0
+py scripts/slice_sheet.py --in_sheet sheet.png --cols 5 --rows 5 --out_root inputs --creature goblin_darter --group 0
 ```
 
 ## 2) `scripts/adjust_frames.py`
@@ -55,8 +55,8 @@ Behavior:
 
 Examples:
 ```bash
-py scripts/adjust_frames.py --in_root input_root --out_root input_root --creature goblin_darter --brightness 110 --contrast 105
-py scripts/adjust_frames.py --in_root processed_root --out_root processed_root --creature goblin_darter --group 2 --sharpness 120 --gamma 95
+py scripts/adjust_frames.py --in_root inputs --out_root inputs --creature goblin_darter --brightness 110 --contrast 105
+py scripts/adjust_frames.py --in_root outputs/1x --out_root outputs/1x --creature goblin_darter --group 2 --sharpness 120 --gamma 95
 ```
 
 ## 3) `scripts/process_frames.py`
@@ -79,6 +79,7 @@ Operations:
 Important:
 - At least one operation flag must be provided.
 - Operation order is fixed internally: remove-bg -> reframe -> force-bg.
+- `out_root` only receives main output when `--reframe` or `--force-bg` is active.
 
 Relevant parameters:
 - Target canvas / placement: `--canvas_w`, `--canvas_h`, `--baseline_y`, `--left_limit_x`, `--left_padding`, `--sprite_h`, `--sprite_w`, `--prefer`
@@ -89,8 +90,8 @@ Relevant parameters:
 Example:
 ```bash
 py scripts/process_frames.py ^
-  --in_root input_root ^
-  --out_root processed_root/1x ^
+  --in_root inputs ^
+  --out_root outputs/1x ^
   --only_creature goblin_darter ^
   --remove-bg --reframe ^
   --canvas_w 450 ^
@@ -108,7 +109,7 @@ py scripts/process_frames.py ^
 Builds `creature_id.json` from processed frames.
 
 Parameters:
-- `--input_root <processed_root>`
+- `--input_root <outputs/1x>`
 - `--output_root <anim_json_root>`
 - `--basepath_prefix <prefix>`
 
@@ -118,7 +119,7 @@ Important:
 
 Example:
 ```bash
-py scripts/build_anim_json.py --input_root processed_root/1x --output_root anim_json_root --basepath_prefix battle/
+py scripts/build_anim_json.py --input_root outputs/1x --output_root anim_json_root --basepath_prefix battle/
 ```
 
 ## 5) `scripts/deploy_assets.py`
@@ -126,10 +127,10 @@ py scripts/build_anim_json.py --input_root processed_root/1x --output_root anim_
 Deploys PNGs into the mod and merges JSON incrementally.
 
 Parameters:
-- `--in_root <processed_root>`
-- `--in_root_2x <processed_root_2x>` (optional)
-- `--in_root_3x <processed_root_3x>` (optional)
-- `--in_root_4x <processed_root_4x>` (optional)
+- `--in_root <outputs/1x>`
+- `--in_root_2x <outputs/2x>` (optional)
+- `--in_root_3x <outputs/3x>` (optional)
+- `--in_root_4x <outputs/4x>` (optional)
 - `--json_in <anim_json_root>`
 - `--out_root <mod_assets_root>/sprites`
 - `--json_out <mod_json_root>`
@@ -144,5 +145,5 @@ Important:
 
 Example:
 ```bash
-py scripts/deploy_assets.py --in_root processed_root/1x --in_root_2x processed_root/2x --in_root_3x processed_root/3x --in_root_4x processed_root/4x --out_root <mod_assets_root>/sprites --json_in anim_json_root --json_out <mod_json_root> --only_creature goblin_darter
+py scripts/deploy_assets.py --in_root outputs/1x --in_root_2x outputs/2x --in_root_3x outputs/3x --in_root_4x outputs/4x --out_root <mod_assets_root>/sprites --json_in anim_json_root --json_out <mod_json_root> --only_creature goblin_darter
 ```
