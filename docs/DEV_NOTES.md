@@ -55,6 +55,30 @@ Recent UI decisions worth preserving:
 - keep the preview-launch entry point near the viewer tabs without interfering with canvas interaction
 - continue polishing multi-resolution browsing so scale selection stays obvious but low-noise
 
+4) Scope and selection UX:
+- current status:
+  - `Scope` now explains its dual meaning in the GUI
+  - `Use Viewer Selection` copies the current viewer creature/group into scope explicitly
+  - the scope creature control is now an editable combo box populated from `inputs`
+- later option to evaluate:
+  - split the current scope into:
+    - a dedicated split destination selector
+    - a separate processing/filter scope for the rest of the pipeline
+
+5) Image adjustment value transfer:
+- current status:
+  - the main window now provides compact arrow actions between `Input stage` and `Output stage`
+  - supported actions:
+    - copy input adjustments to output
+    - copy output adjustments to input
+    - swap both adjustment sets
+
+6) Open-folder shortcuts:
+- current status:
+  - `Open Folder` actions now exist in the main `Paths` area
+  - `Open Folder` is available in the JSON tab/panel
+  - the existing viewer `Open Folder` action remains in place
+
 ## Documentation conventions
 
 - `docs/SCRIPTS.md` should stay focused on standalone CLI usage only.
@@ -92,6 +116,9 @@ Design direction:
 - helper outputs should stay clearly separate from main processed outputs
 - longer term, this still argues for splitting `process_frames.py` into reusable core operations with a thin orchestration layer on top
 
+Deferred follow-up:
+- continue decoupling the internal `process_frames.py` implementation into smaller reusable units such as frame discovery, background removal, reframing, forced background generation, and preview generation
+
 ### 3) Hierarchical settings
 
 Goal:
@@ -108,6 +135,17 @@ Why this matters:
 - different creatures often need different baselines, paddings, and cleanup settings
 - different animation groups may need different offsets or treatment
 - multi-resolution processing will make fixed global settings even less practical
+
+### 4) Resolution-specific overrides
+
+Goal:
+- keep the current simple `1x`-driven UI as the default
+- allow later overrides for selected parameters per resolution when needed
+
+Design direction:
+- keep the scaling/orchestration logic in the GUI layer
+- let the script continue to execute only the explicit numeric parameters it receives
+- add per-resolution overrides only after the base hierarchical settings model is in place
 
 ### Suggested implementation order
 

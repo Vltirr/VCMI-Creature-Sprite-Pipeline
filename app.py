@@ -998,6 +998,8 @@ class PipelineRunner(QWidget):
         self.le_mod_json_root = QLineEdit()
         self.le_hex_overlay = QLineEdit()
 
+        self.path_open_buttons = {}
+
         def add_path_row(row, label_text, le: QLineEdit, is_dir=True):
             lab = QLabel(label_text)
             tip = paths_tt.get(label_text, "")
@@ -1007,9 +1009,14 @@ class PipelineRunner(QWidget):
             pg.addWidget(lab, row, 0)
             pg.addWidget(le, row, 1)
             btn = QPushButton("Browse...")
+            btn_open = QToolButton()
+            btn_open.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
+            btn_open.setAutoRaise(True)
             if tip:
                 btn.setToolTip(tip)
+                btn_open.setToolTip(f"Open the current {label_text} folder.")
             pg.addWidget(btn, row, 2)
+            pg.addWidget(btn_open, row, 3)
 
             def browse():
                 start = le.text().strip() or os.getcwd()
@@ -1022,7 +1029,18 @@ class PipelineRunner(QWidget):
                     if f:
                         le.setText(f)
 
+            def open_current():
+                value = le.text().strip()
+                if not value:
+                    return
+                target = Path(value)
+                if not is_dir:
+                    target = target.parent
+                self._open_folder_path(target)
+
             btn.clicked.connect(browse)
+            btn_open.clicked.connect(open_current)
+            self.path_open_buttons[label_text] = btn_open
             return lab, le
 
         self.lb_scripts_dir, _ = add_path_row(0, "Scripts Folder", self.le_scripts_dir, True)
@@ -1109,9 +1127,27 @@ class PipelineRunner(QWidget):
 
         self.lb_scope_creature = QLabel("Creature")
         self.lb_scope_group = QLabel("Group")
+        self.lb_scope_hint = QLabel("Scope filters existing content. For Split, it also defines the destination creature/group.")
+        self.lb_scope_hint.setWordWrap(True)
+        self.lb_scope_hint.setStyleSheet("color: #4b5e77; font-size: 11px;")
 
-        self.le_only_creature = QLineEdit()
-        self.le_only_creature.setPlaceholderText("e.g. goblin_darter (empty = all)")
+        self.le_only_creature = QComboBox()
+        self.le_only_creature.setEditable(True)
+        self.le_only_creature.setInsertPolicy(QComboBox.NoInsert)
+        self.le_only_creature.setSizeAdjustPolicy(QComboBox.AdjustToContentsOnFirstShow)
+        self.le_only_creature.lineEdit().setPlaceholderText("e.g. goblin_darter (empty = all)")
+        self.btn_scope_refresh = QToolButton()
+        self.btn_scope_refresh.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
+        self.btn_scope_refresh.setAutoRaise(True)
+        self.btn_use_viewer_scope = QPushButton("Use Viewer Selection")
+        self.btn_use_viewer_scope.setMinimumWidth(0)
+        scope_creature_row = QWidget()
+        scope_creature_layout = QHBoxLayout(scope_creature_row)
+        scope_creature_layout.setContentsMargins(0, 0, 0, 0)
+        scope_creature_layout.setSpacing(6)
+        scope_creature_layout.addWidget(self.le_only_creature, 1)
+        scope_creature_layout.addWidget(self.btn_scope_refresh)
+        scope_creature_layout.addWidget(self.btn_use_viewer_scope)
 
         self.cb_only_group = QComboBox()
         self.cb_only_group.addItem("All", None)
@@ -1119,9 +1155,10 @@ class PipelineRunner(QWidget):
             self.cb_only_group.addItem(group_label(g), g)
 
         sg.addWidget(self.lb_scope_creature, 0, 0)
-        sg.addWidget(self.le_only_creature, 0, 1)
+        sg.addWidget(scope_creature_row, 0, 1)
         sg.addWidget(self.lb_scope_group, 1, 0)
         sg.addWidget(self.cb_only_group, 1, 1)
+        sg.addWidget(self.lb_scope_hint, 2, 0, 1, 2)
 
         row2.addWidget(self.gb_scope, 1)
 
@@ -1177,6 +1214,9 @@ class PipelineRunner(QWidget):
         self.le_sheet.setPlaceholderText("Spritesheet file path")
 
         self.btn_sheet = QPushButton("Browse...")
+        self.btn_sheet_open = QToolButton()
+        self.btn_sheet_open.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
+        self.btn_sheet_open.setAutoRaise(True)
         self.sp_cols = QSpinBox(); self.sp_cols.setRange(1, 200)
         self.sp_rows = QSpinBox(); self.sp_rows.setRange(1, 200)
         self.chk_autocrop = QCheckBox("Auto Crop")
@@ -1184,6 +1224,7 @@ class PipelineRunner(QWidget):
         so.addWidget(self.lb_sheet, 0, 0)
         so.addWidget(self.le_sheet, 0, 1)
         so.addWidget(self.btn_sheet, 0, 2)
+        so.addWidget(self.btn_sheet_open, 0, 3)
         so.addWidget(self.lb_cols, 1, 0)
         so.addWidget(self.sp_cols, 1, 1)
         so.addWidget(self.lb_rows, 2, 0)
@@ -1199,6 +1240,11 @@ class PipelineRunner(QWidget):
                 self.le_sheet.setText(f)
 
         self.btn_sheet.clicked.connect(browse_sheet)
+        self.btn_sheet_open.clicked.connect(
+            lambda: self._open_folder_path(
+                Path(self.le_sheet.text().strip()).parent if self.le_sheet.text().strip() else Path.cwd()
+            )
+        )
 
         row2.addWidget(self.gb_split, 2)
 
@@ -1254,7 +1300,7 @@ class PipelineRunner(QWidget):
         params_header = QHBoxLayout()
         params_header.setContentsMargins(0, 0, 0, 0)
         params_header.setSpacing(6)
-        self.lb_params_title = QLabel("Process Frames Defaults (process_frames.py)")
+        self.lb_params_title = QLabel("Process Frames Options")
         self.lb_params_title.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.btn_toggle_params = QToolButton()
         self.btn_toggle_params.setCheckable(True)
@@ -1583,10 +1629,29 @@ class PipelineRunner(QWidget):
 
         self.gb_adjust_input_stage = make_adjust_stage("Input stage", "input")
         self.gb_adjust_output_stage = make_adjust_stage("Output stage", "output")
+        self.adjust_transfer_widget = QWidget()
+        transfer_layout = QVBoxLayout(self.adjust_transfer_widget)
+        transfer_layout.setContentsMargins(0, 0, 0, 0)
+        transfer_layout.setSpacing(8)
+        transfer_layout.addStretch(1)
+        self.btn_adjust_copy_input_to_output = QToolButton()
+        self.btn_adjust_copy_input_to_output.setIcon(self.style().standardIcon(QStyle.SP_ArrowForward))
+        self.btn_adjust_copy_input_to_output.setAutoRaise(True)
+        self.btn_adjust_copy_output_to_input = QToolButton()
+        self.btn_adjust_copy_output_to_input.setIcon(self.style().standardIcon(QStyle.SP_ArrowBack))
+        self.btn_adjust_copy_output_to_input.setAutoRaise(True)
+        self.btn_adjust_swap_stages = QToolButton()
+        self.btn_adjust_swap_stages.setText("<>")
+        self.btn_adjust_swap_stages.setAutoRaise(True)
+        transfer_layout.addWidget(self.btn_adjust_copy_input_to_output, 0, Qt.AlignHCenter)
+        transfer_layout.addWidget(self.btn_adjust_copy_output_to_input, 0, Qt.AlignHCenter)
+        transfer_layout.addWidget(self.btn_adjust_swap_stages, 0, Qt.AlignHCenter)
+        transfer_layout.addStretch(1)
         adjustments_stages_row = QHBoxLayout()
         adjustments_stages_row.setContentsMargins(0, 0, 0, 0)
         adjustments_stages_row.setSpacing(10)
         adjustments_stages_row.addWidget(self.gb_adjust_input_stage, 1)
+        adjustments_stages_row.addWidget(self.adjust_transfer_widget, 0, Qt.AlignCenter)
         adjustments_stages_row.addWidget(self.gb_adjust_output_stage, 1)
         adjustments_body_layout.addLayout(adjustments_stages_row)
         self.adjustments_scroll.setWidget(self.adjustments_body)
@@ -1813,6 +1878,7 @@ class PipelineRunner(QWidget):
         self.cb_json_creature = QComboBox()
         self.btn_json_refresh = QPushButton("Refresh")
         self.btn_json_open = QPushButton("Open File")
+        self.btn_json_open_folder = QPushButton("Open Folder")
 
         self.json_text = QPlainTextEdit()
         self.json_text.setReadOnly(True)
@@ -1824,8 +1890,9 @@ class PipelineRunner(QWidget):
         jv.addWidget(QLabel("Creature"), 1, 0)
         jv.addWidget(self.cb_json_creature, 1, 1)
         jv.addWidget(self.btn_json_open, 1, 2)
+        jv.addWidget(self.btn_json_open_folder, 1, 3)
 
-        jv.addWidget(self.json_text, 2, 0, 1, 3)
+        jv.addWidget(self.json_text, 2, 0, 1, 4)
 
         self.tabs.addTab(self.tab_json, "JSON")
 
@@ -1956,12 +2023,16 @@ class PipelineRunner(QWidget):
         # -------- Signals / bindings --------
         for le in [
             self.le_scripts_dir, self.le_input_root, self.le_processed_root, self.le_anim_json_root,
-            self.le_mod_assets_root, self.le_mod_json_root, self.le_hex_overlay, self.le_sheet, self.le_only_creature
+            self.le_mod_assets_root, self.le_mod_json_root, self.le_hex_overlay, self.le_sheet
         ]:
             le.textChanged.connect(self.refresh_ui_state)
+        self.le_only_creature.lineEdit().textChanged.connect(self.refresh_ui_state)
+        self.le_input_root.textChanged.connect(lambda _=None: self._refresh_scope_creature_choices())
+        self.btn_scope_refresh.clicked.connect(self._refresh_scope_creature_choices)
 
         self.cb_only_group.currentIndexChanged.connect(self.refresh_ui_state)
         self.chk_split.toggled.connect(self.refresh_ui_state)
+        self.chk_split.toggled.connect(self._update_scope_hint)
         self.chk_adjust_input.toggled.connect(self.refresh_ui_state)
         self.chk_process.toggled.connect(self.refresh_ui_state)
         self.chk_adjust_output.toggled.connect(self.refresh_ui_state)
@@ -1974,6 +2045,10 @@ class PipelineRunner(QWidget):
         self.chk_res_2x.toggled.connect(self.refresh_ui_state)
         self.chk_res_3x.toggled.connect(self.refresh_ui_state)
         self.chk_res_4x.toggled.connect(self.refresh_ui_state)
+        self.btn_use_viewer_scope.clicked.connect(self._use_viewer_selection_for_scope)
+        self.btn_adjust_copy_input_to_output.clicked.connect(lambda: self._copy_adjustment_stage("input", "output"))
+        self.btn_adjust_copy_output_to_input.clicked.connect(lambda: self._copy_adjustment_stage("output", "input"))
+        self.btn_adjust_swap_stages.clicked.connect(self._swap_adjustment_stages)
 
         self.btn_steps_all.clicked.connect(self.steps_select_all)
         self.btn_steps_none.clicked.connect(self.steps_select_none)
@@ -1999,6 +2074,7 @@ class PipelineRunner(QWidget):
         self.cb_json_source.currentIndexChanged.connect(lambda: self.json_refresh_all(keep_selection=True))
         self.cb_json_creature.currentIndexChanged.connect(self.json_load_selected)
         self.btn_json_open.clicked.connect(self.json_open_selected)
+        self.btn_json_open_folder.clicked.connect(self.json_open_folder)
 
         self.btn_log_clear.clicked.connect(lambda: self.log.clear())
         self.btn_log_pop.clicked.connect(self.open_log_popup)
@@ -2061,8 +2137,11 @@ class PipelineRunner(QWidget):
             tt(None, self.btn_toggle_paths, "Show/Hide path fields (buttons stay visible).")
 
         # ---- Scope ----
-        tt(self.lb_scope_creature, self.le_only_creature, "Optional creature scope (creature_id folder name), e.g. goblin_darter. Empty = all creatures found.")
+        tt(self.lb_scope_creature, self.le_only_creature, "Optional creature scope. You can type a creature_id manually or pick one discovered under Inputs. Empty = all creatures.")
         tt(self.lb_scope_group, self.cb_only_group, "Optional group scope. All = all groups present in the selected creature folder.")
+        tt(None, self.btn_scope_refresh, "Rescan creature folders under Inputs and refresh the Scope creature list.")
+        tt(None, self.btn_use_viewer_scope, "Copy the current Viewer creature and group into Scope.")
+        tt(None, self.lb_scope_hint, "Scope filters existing content for most steps. When Split is enabled, it also defines the destination creature/group.")
 
         # ---- Steps ----
         tt(None, self.chk_split, "Step 1: Split a spritesheet into frames (slice_sheet.py).")
@@ -2079,12 +2158,13 @@ class PipelineRunner(QWidget):
         # ---- Split options ----
         tt(self.lb_sheet, self.le_sheet, "Input spritesheet image to split.")
         tt(None, self.btn_sheet, "Browse for spritesheet.")
+        tt(None, self.btn_sheet_open, "Open the current spritesheet folder.")
         tt(self.lb_cols, self.sp_cols, "Grid columns in spritesheet.")
         tt(self.lb_rows, self.sp_rows, "Grid rows in spritesheet.")
         tt(None, self.chk_autocrop, "Auto-crop spritesheet to be divisible by rows/cols.")
 
         # ---- Process defaults ----
-        tt(None, self.btn_toggle_params, "Show/Hide process_frames.py default parameters.")
+        tt(None, self.btn_toggle_params, "Show/Hide the frame-processing options used by the Process Frames step.")
         tt(None, self.btn_toggle_adjustments, "Show/Hide image adjustment controls.")
         tt(None, self.chk_despill, "Enable despill to reduce chroma spill (magenta/green).")
         tt(None, self.chk_remove_bg, "Run chroma/key cleanup for Process Frames.")
@@ -2117,6 +2197,7 @@ class PipelineRunner(QWidget):
         tt(None, self.cb_json_creature, "Select <creature_id>.json to view.")
         tt(None, self.btn_json_refresh, "Refresh JSON file list.")
         tt(None, self.btn_json_open, "Open selected JSON in default editor.")
+        tt(None, self.btn_json_open_folder, "Open the current JSON source folder.")
 
         # ---- Log ----
         tt(None, self.btn_toggle_log, "Collapse/expand log (header stays visible).")
@@ -2130,20 +2211,26 @@ class PipelineRunner(QWidget):
 
         # Helpful label tooltips
         if hasattr(self, "lb_params_title"):
-            self.lb_params_title.setToolTip("Advanced parameters for process_frames.py.")
+            self.lb_params_title.setToolTip("Options for background cleanup, reframing, output resolutions, and forced background helper generation.")
         if hasattr(self, "gb_adjustments"):
             self.gb_adjustments.setToolTip("Independent image adjustment controls for input and output stages.")
             self.lb_adjustments_title.setToolTip("Independent image adjustment controls for input and output stages.")
             self.gb_adjust_input_stage.setToolTip("Saved settings used by the Adjust Input pipeline step.")
             self.gb_adjust_output_stage.setToolTip("Saved settings used by the Adjust Output pipeline step.")
-            if hasattr(self, "btn_input_preview_edit"):
-                self.btn_input_preview_edit.setToolTip("Open the live preview editor loaded with the Input stage values.")
-            if hasattr(self, "btn_output_preview_edit"):
-                self.btn_output_preview_edit.setToolTip("Open the live preview editor loaded with the Output stage values.")
-            if hasattr(self, "btn_input_reset"):
-                self.btn_input_reset.setToolTip("Reset saved Input stage values to neutral.")
-            if hasattr(self, "btn_output_reset"):
-                self.btn_output_reset.setToolTip("Reset saved Output stage values to neutral.")
+        if hasattr(self, "btn_input_preview_edit"):
+            self.btn_input_preview_edit.setToolTip("Open the live preview editor loaded with the Input stage values.")
+        if hasattr(self, "btn_output_preview_edit"):
+            self.btn_output_preview_edit.setToolTip("Open the live preview editor loaded with the Output stage values.")
+        if hasattr(self, "btn_input_reset"):
+            self.btn_input_reset.setToolTip("Reset saved Input stage values to neutral.")
+        if hasattr(self, "btn_output_reset"):
+            self.btn_output_reset.setToolTip("Reset saved Output stage values to neutral.")
+        if hasattr(self, "btn_adjust_copy_input_to_output"):
+            self.btn_adjust_copy_input_to_output.setToolTip("Copy Input stage adjustment values into Output stage.")
+        if hasattr(self, "btn_adjust_copy_output_to_input"):
+            self.btn_adjust_copy_output_to_input.setToolTip("Copy Output stage adjustment values into Input stage.")
+        if hasattr(self, "btn_adjust_swap_stages"):
+            self.btn_adjust_swap_stages.setToolTip("Swap Input stage and Output stage adjustment values.")
         if hasattr(self, "lb_log_title"):
             self.lb_log_title.setToolTip("Embedded log; use Pop-out for larger view.")
 
@@ -2237,7 +2324,7 @@ class PipelineRunner(QWidget):
         if not root.exists() or not root.is_dir():
             return False
 
-        creature = self.le_only_creature.text().strip()
+        creature = self.le_only_creature.currentText().strip()
         group = self._selected_group_value()
         creature_dirs = [root / creature] if creature else [p for p in root.iterdir() if p.is_dir()]
 
@@ -2398,6 +2485,19 @@ class PipelineRunner(QWidget):
             self._set_adjust_slider_value(getattr(self, f"sp_{stage}_{name}"), self._stored_adjust_to_slider(name, stored))
         self._ui_to_settings()
         self._update_preview_status()
+        if self.preview_window is not None and self.preview_window.isVisible() and self.preview_window.edit_stage == stage:
+            self.preview_window.set_stage_values(stage, values)
+            self._schedule_viewer_preview(stage)
+
+    def _copy_adjustment_stage(self, source: str, target: str):
+        values = self._stage_values_from_ui(source)
+        self._apply_values_to_stage_ui(target, values)
+
+    def _swap_adjustment_stages(self):
+        input_values = self._stage_values_from_ui("input")
+        output_values = self._stage_values_from_ui("output")
+        self._apply_values_to_stage_ui("input", output_values)
+        self._apply_values_to_stage_ui("output", input_values)
 
     def _previewable_stage_values(self, stage: str) -> dict[str, int]:
         if self.preview_window is not None and self.preview_window.isVisible() and self.preview_window.edit_stage == stage:
@@ -2583,6 +2683,8 @@ class PipelineRunner(QWidget):
         self.le_mod_assets_root.setText(s.mod_assets_root)
         self.le_mod_json_root.setText(s.mod_json_root)
         self.le_hex_overlay.setText(s.hex_overlay)
+        self._refresh_scope_creature_choices()
+        self._update_scope_hint()
 
         self.sp_baseline_y.setValue(s.baseline_y)
         self.sp_left_limit_x.setValue(s.left_limit_x)
@@ -2818,6 +2920,7 @@ class PipelineRunner(QWidget):
         self.le_anim_json_root.setText(str((base / "anim_json").resolve()))
 
         self.append_log("[INFO] Paths reset to defaults relative to scripts folder.", "info")
+        self._refresh_scope_creature_choices()
         self.viewer_refresh_all(keep_selection=True)
         self.json_refresh_all(keep_selection=True)
 
@@ -2835,6 +2938,7 @@ class PipelineRunner(QWidget):
             return
         f, d = safe_clear_dir_contents(folder)
         self.append_log(f"[OK] Cleared Input Root: {f} files, {d} folders removed.", "ok")
+        self._refresh_scope_creature_choices()
         self.viewer_refresh_all(keep_selection=False)
 
     def clear_outputs(self):
@@ -2867,12 +2971,70 @@ class PipelineRunner(QWidget):
 
         self.viewer_refresh_all(keep_selection=False)
         self.json_refresh_all(keep_selection=False)
+        self._refresh_scope_creature_choices()
 
     # ---------------- scope ----------------
     def _scope_values(self):
-        creature = self.le_only_creature.text().strip()
+        creature = self.le_only_creature.currentText().strip()
         group = self.cb_only_group.currentData()
         return creature, group
+
+    def _scope_creature_set_text(self, value: str):
+        value = value.strip()
+        self.le_only_creature.blockSignals(True)
+        idx = self.le_only_creature.findText(value, Qt.MatchFixedString) if value else -1
+        if idx >= 0:
+            self.le_only_creature.setCurrentIndex(idx)
+        else:
+            self.le_only_creature.setCurrentIndex(-1)
+            self.le_only_creature.setEditText(value)
+        self.le_only_creature.blockSignals(False)
+        self.refresh_ui_state()
+
+    def _refresh_scope_creature_choices(self):
+        current = self.le_only_creature.currentText().strip()
+        root_text = self.le_input_root.text().strip()
+        creatures = []
+        if root_text:
+            root = Path(root_text)
+            if root.exists() and root.is_dir():
+                creatures = sorted(
+                    p.name for p in root.iterdir()
+                    if p.is_dir() and CREATURE_ID_RE.match(p.name)
+                )
+        self.le_only_creature.blockSignals(True)
+        self.le_only_creature.clear()
+        self.le_only_creature.addItem("")
+        for creature in creatures:
+            self.le_only_creature.addItem(creature)
+        if current:
+            idx = self.le_only_creature.findText(current, Qt.MatchFixedString)
+            if idx >= 0:
+                self.le_only_creature.setCurrentIndex(idx)
+            else:
+                self.le_only_creature.setEditText(current)
+        else:
+            self.le_only_creature.setCurrentIndex(0)
+        self.le_only_creature.blockSignals(False)
+
+    def _use_viewer_selection_for_scope(self):
+        creature = self.cb_view_creature.currentData()
+        group = self.cb_view_group.currentData()
+        if creature:
+            self._scope_creature_set_text(str(creature))
+        if group is None:
+            self.cb_only_group.setCurrentIndex(0)
+        else:
+            idx = self.cb_only_group.findData(group)
+            if idx >= 0:
+                self.cb_only_group.setCurrentIndex(idx)
+        self._update_scope_hint()
+
+    def _update_scope_hint(self):
+        if self.chk_split.isChecked():
+            self.lb_scope_hint.setText("Scope filters existing content for most steps. With Split enabled, it also defines the destination creature/group.")
+        else:
+            self.lb_scope_hint.setText("Scope filters existing content for the selected pipeline steps. Empty creature means all creatures.")
 
     # ---------------- image viewer ----------------
     def viewer_source_root(self) -> Path | None:
@@ -3070,9 +3232,16 @@ class PipelineRunner(QWidget):
             cand = parent
 
         if cand and cand.exists():
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(cand.resolve())))
+            self._open_folder_path(cand.resolve())
         else:
             self.append_log(f"[Viewer] Folder not found: {folder}", "warn")
+
+    def _open_folder_path(self, folder: Path):
+        try:
+            if folder.exists():
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+        except Exception as e:
+            self.append_log(f"[WARN] Could not open folder: {folder} ({e})", "warn")
 
     def viewer_prev_frame(self):
         idx = self.cb_view_frame.currentIndex()
@@ -3218,6 +3387,11 @@ class PipelineRunner(QWidget):
         p = self.json_selected_path()
         if p and p.exists():
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(p.resolve())))
+
+    def json_open_folder(self):
+        root = self.json_source_root()
+        if root and root.exists():
+            self._open_folder_path(root.resolve())
 
     # ---------------- pipeline run ----------------
     def on_save(self):
@@ -3399,7 +3573,7 @@ class PipelineRunner(QWidget):
                 toggle.setChecked(False)
 
         # Confirm risky operation: splitting without scope produces unstructured output
-        if self.chk_split.isChecked() and not self.le_only_creature.text().strip():
+        if self.chk_split.isChecked() and not self.le_only_creature.currentText().strip():
             r = QMessageBox.question(
                 self,
                 "Split without scope?",
@@ -3447,6 +3621,7 @@ class PipelineRunner(QWidget):
             self.current_step = "ui"
             self.viewer_refresh_all(keep_selection=True)
             self.json_refresh_all(keep_selection=True)
+            self._refresh_scope_creature_choices()
             return
 
         cmd = self.queue.pop(0)
