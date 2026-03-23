@@ -4,7 +4,7 @@ import re
 import sys
 import shutil
 import base64
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from PySide6.QtCore import QProcess, Qt, QUrl, QByteArray, QTimer, QSize, Signal
@@ -169,6 +169,7 @@ class AppSettings:
     ui_params_expanded: bool = False
     ui_log_expanded: bool = False
     ui_splitter_sizes: list[int] = None
+    global_profiles: dict = field(default_factory=dict)
 
     # Viewer-only: background behind sprites in the GUI (does not modify files)
 
@@ -179,16 +180,72 @@ def load_settings(path: Path) -> AppSettings:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         s = AppSettings()
-        for k, v in data.items():
-            if hasattr(s, k):
-                setattr(s, k, v)
+        if all(k in data for k in ["paths", "ui_state", "global_profiles", "current_values"]):
+            for k, v in data.get("paths", {}).items():
+                if hasattr(s, k):
+                    setattr(s, k, v)
+            for k, v in data.get("ui_state", {}).items():
+                if hasattr(s, k):
+                    setattr(s, k, v)
+            current_values = data.get("current_values", {})
+            for k, v in current_values.get("process_frames", {}).items():
+                if hasattr(s, k):
+                    setattr(s, k, v)
+            for k, v in current_values.get("image_adjustments", {}).items():
+                if hasattr(s, k):
+                    setattr(s, k, v)
+            s.global_profiles = data.get("global_profiles", {})
+        else:
+            for k, v in data.items():
+                if hasattr(s, k):
+                    setattr(s, k, v)
+            s.global_profiles = {
+                "process_frames": _settings_process_profile_dict(s),
+                "image_adjustments": _settings_adjust_profile_dict(s),
+            }
         return s
     except Exception:
         return AppSettings()
 
 
 def save_settings(path: Path, settings: AppSettings):
-    path.write_text(json.dumps(asdict(settings), indent=2), encoding="utf-8")
+    data = {
+        "paths": {
+            "scripts_dir": settings.scripts_dir,
+            "input_root": settings.input_root,
+            "processed_root": settings.processed_root,
+            "anim_json_root": settings.anim_json_root,
+            "mod_assets_root": settings.mod_assets_root,
+            "mod_json_root": settings.mod_json_root,
+            "hex_overlay": settings.hex_overlay,
+        },
+        "ui_state": {
+            "viewer_canvas_bg": settings.viewer_canvas_bg,
+            "viewer_zoom_scale": settings.viewer_zoom_scale,
+            "viewer_hscroll": settings.viewer_hscroll,
+            "viewer_vscroll": settings.viewer_vscroll,
+            "overlay_alpha": settings.overlay_alpha,
+            "split_cols": settings.split_cols,
+            "split_rows": settings.split_rows,
+            "split_autocrop": settings.split_autocrop,
+            "window_geometry_b64": settings.window_geometry_b64,
+            "window_maximized": settings.window_maximized,
+            "ui_state_version": settings.ui_state_version,
+            "ui_paths_expanded": settings.ui_paths_expanded,
+            "ui_params_expanded": settings.ui_params_expanded,
+            "ui_log_expanded": settings.ui_log_expanded,
+            "ui_splitter_sizes": settings.ui_splitter_sizes,
+        },
+        "global_profiles": settings.global_profiles or {
+            "process_frames": _settings_process_profile_dict(settings),
+            "image_adjustments": _settings_adjust_profile_dict(settings),
+        },
+        "current_values": {
+            "process_frames": _settings_process_profile_dict(settings),
+            "image_adjustments": _settings_adjust_profile_dict(settings),
+        },
+    }
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def script_path(scripts_dir: str, name: str) -> str:
@@ -233,6 +290,50 @@ def safe_clear_dir_contents(folder: Path) -> tuple[int, int]:
         except Exception:
             pass
     return files, dirs
+
+
+def _settings_process_profile_dict(settings: AppSettings) -> dict:
+    return {
+        "process_remove_bg": settings.process_remove_bg,
+        "process_reframe": settings.process_reframe,
+        "process_force_bg_output": settings.process_force_bg_output,
+        "process_force_bg_color": settings.process_force_bg_color,
+        "gen_1x": settings.gen_1x,
+        "gen_2x": settings.gen_2x,
+        "gen_3x": settings.gen_3x,
+        "gen_4x": settings.gen_4x,
+        "baseline_y": settings.baseline_y,
+        "left_limit_x": settings.left_limit_x,
+        "left_padding": settings.left_padding,
+        "sprite_h": settings.sprite_h,
+        "sprite_w": settings.sprite_w,
+        "prefer": settings.prefer,
+        "tol": settings.tol,
+        "feather": settings.feather,
+        "shrink": settings.shrink,
+        "despill": settings.despill,
+        "key_from": settings.key_from,
+        "bg_mode": settings.bg_mode,
+    }
+
+
+def _settings_adjust_profile_dict(settings: AppSettings) -> dict:
+    return {
+        "input_brightness": settings.input_brightness,
+        "input_contrast": settings.input_contrast,
+        "input_saturation": settings.input_saturation,
+        "input_sharpness": settings.input_sharpness,
+        "input_gamma": settings.input_gamma,
+        "input_highlights": settings.input_highlights,
+        "input_shadows": settings.input_shadows,
+        "output_brightness": settings.output_brightness,
+        "output_contrast": settings.output_contrast,
+        "output_saturation": settings.output_saturation,
+        "output_sharpness": settings.output_sharpness,
+        "output_gamma": settings.output_gamma,
+        "output_highlights": settings.output_highlights,
+        "output_shadows": settings.output_shadows,
+    }
 
 
 class ImageView(QGraphicsView):
@@ -766,6 +867,11 @@ class PipelineRunner(QWidget):
 
         self.settings_path = Path(SETTINGS_FILE)
         self.s = load_settings(self.settings_path)
+        if not self.s.global_profiles:
+            self.s.global_profiles = {
+                "process_frames": _settings_process_profile_dict(self.s),
+                "image_adjustments": _settings_adjust_profile_dict(self.s),
+            }
 
         self.proc: QProcess | None = None
         self.queue: list[list[str]] = []
@@ -1141,6 +1247,14 @@ class PipelineRunner(QWidget):
         self.btn_scope_refresh.setAutoRaise(True)
         self.btn_use_viewer_scope = QPushButton("Use Viewer Selection")
         self.btn_use_viewer_scope.setMinimumWidth(0)
+        self.btn_scope_save_profile = QPushButton("Save Profile")
+        self.btn_scope_save_profile.setMinimumWidth(0)
+
+        self.cb_only_group = QComboBox()
+        self.cb_only_group.addItem("All", None)
+        for g in VALID_GROUPS:
+            self.cb_only_group.addItem(group_label(g), g)
+
         scope_creature_row = QWidget()
         scope_creature_layout = QHBoxLayout(scope_creature_row)
         scope_creature_layout.setContentsMargins(0, 0, 0, 0)
@@ -1148,16 +1262,17 @@ class PipelineRunner(QWidget):
         scope_creature_layout.addWidget(self.le_only_creature, 1)
         scope_creature_layout.addWidget(self.btn_scope_refresh)
         scope_creature_layout.addWidget(self.btn_use_viewer_scope)
-
-        self.cb_only_group = QComboBox()
-        self.cb_only_group.addItem("All", None)
-        for g in VALID_GROUPS:
-            self.cb_only_group.addItem(group_label(g), g)
+        scope_group_row = QWidget()
+        scope_group_layout = QHBoxLayout(scope_group_row)
+        scope_group_layout.setContentsMargins(0, 0, 0, 0)
+        scope_group_layout.setSpacing(6)
+        scope_group_layout.addWidget(self.cb_only_group, 1)
+        scope_group_layout.addWidget(self.btn_scope_save_profile, 0)
 
         sg.addWidget(self.lb_scope_creature, 0, 0)
         sg.addWidget(scope_creature_row, 0, 1)
         sg.addWidget(self.lb_scope_group, 1, 0)
-        sg.addWidget(self.cb_only_group, 1, 1)
+        sg.addWidget(scope_group_row, 1, 1)
         sg.addWidget(self.lb_scope_hint, 2, 0, 1, 2)
 
         row2.addWidget(self.gb_scope, 1)
@@ -1314,6 +1429,23 @@ class PipelineRunner(QWidget):
 
         params_header.addWidget(self.btn_toggle_params)
         params_header.addWidget(self.lb_params_title)
+        self.params_profile_bar = QWidget()
+        params_profile_layout = QHBoxLayout(self.params_profile_bar)
+        params_profile_layout.setContentsMargins(0, 0, 0, 0)
+        params_profile_layout.setSpacing(4)
+        self.btn_params_load_global = QToolButton(); self.btn_params_load_global.setText("Load Global")
+        self.btn_params_load_creature = QToolButton(); self.btn_params_load_creature.setText("Load Creature")
+        self.btn_params_load_group = QToolButton(); self.btn_params_load_group.setText("Load Group")
+        self.btn_params_save_global = QToolButton(); self.btn_params_save_global.setText("Save Global")
+        self.btn_params_save_creature = QToolButton(); self.btn_params_save_creature.setText("Save Creature")
+        self.btn_params_save_group = QToolButton(); self.btn_params_save_group.setText("Save Group")
+        for btn in [
+            self.btn_params_load_global, self.btn_params_load_creature, self.btn_params_load_group,
+            self.btn_params_save_global, self.btn_params_save_creature, self.btn_params_save_group,
+        ]:
+            btn.setAutoRaise(True)
+            params_profile_layout.addWidget(btn)
+        params_header.addWidget(self.params_profile_bar)
         params_header.addStretch(1)
         outer.addLayout(params_header)
 
@@ -1456,6 +1588,23 @@ class PipelineRunner(QWidget):
         self.lb_adjustments_title.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         adjust_header.addWidget(self.btn_toggle_adjustments)
         adjust_header.addWidget(self.lb_adjustments_title)
+        self.adjust_profile_bar = QWidget()
+        adjust_profile_layout = QHBoxLayout(self.adjust_profile_bar)
+        adjust_profile_layout.setContentsMargins(0, 0, 0, 0)
+        adjust_profile_layout.setSpacing(4)
+        self.btn_adjust_load_global = QToolButton(); self.btn_adjust_load_global.setText("Load Global")
+        self.btn_adjust_load_creature = QToolButton(); self.btn_adjust_load_creature.setText("Load Creature")
+        self.btn_adjust_load_group = QToolButton(); self.btn_adjust_load_group.setText("Load Group")
+        self.btn_adjust_save_global = QToolButton(); self.btn_adjust_save_global.setText("Save Global")
+        self.btn_adjust_save_creature = QToolButton(); self.btn_adjust_save_creature.setText("Save Creature")
+        self.btn_adjust_save_group = QToolButton(); self.btn_adjust_save_group.setText("Save Group")
+        for btn in [
+            self.btn_adjust_load_global, self.btn_adjust_load_creature, self.btn_adjust_load_group,
+            self.btn_adjust_save_global, self.btn_adjust_save_creature, self.btn_adjust_save_group,
+        ]:
+            btn.setAutoRaise(True)
+            adjust_profile_layout.addWidget(btn)
+        adjust_header.addWidget(self.adjust_profile_bar)
         adjust_header.addStretch(1)
         adj_outer.addLayout(adjust_header)
 
@@ -2046,9 +2195,22 @@ class PipelineRunner(QWidget):
         self.chk_res_3x.toggled.connect(self.refresh_ui_state)
         self.chk_res_4x.toggled.connect(self.refresh_ui_state)
         self.btn_use_viewer_scope.clicked.connect(self._use_viewer_selection_for_scope)
+        self.btn_scope_save_profile.clicked.connect(self._save_scope_profile_bundle)
         self.btn_adjust_copy_input_to_output.clicked.connect(lambda: self._copy_adjustment_stage("input", "output"))
         self.btn_adjust_copy_output_to_input.clicked.connect(lambda: self._copy_adjustment_stage("output", "input"))
         self.btn_adjust_swap_stages.clicked.connect(self._swap_adjustment_stages)
+        self.btn_params_load_global.clicked.connect(lambda: self._load_profile_into_ui("process_frames", "global"))
+        self.btn_params_load_creature.clicked.connect(lambda: self._load_profile_into_ui("process_frames", "creature"))
+        self.btn_params_load_group.clicked.connect(lambda: self._load_profile_into_ui("process_frames", "group"))
+        self.btn_params_save_global.clicked.connect(lambda: self._save_profile_from_ui("process_frames", "global"))
+        self.btn_params_save_creature.clicked.connect(lambda: self._save_profile_from_ui("process_frames", "creature"))
+        self.btn_params_save_group.clicked.connect(lambda: self._save_profile_from_ui("process_frames", "group"))
+        self.btn_adjust_load_global.clicked.connect(lambda: self._load_profile_into_ui("image_adjustments", "global"))
+        self.btn_adjust_load_creature.clicked.connect(lambda: self._load_profile_into_ui("image_adjustments", "creature"))
+        self.btn_adjust_load_group.clicked.connect(lambda: self._load_profile_into_ui("image_adjustments", "group"))
+        self.btn_adjust_save_global.clicked.connect(lambda: self._save_profile_from_ui("image_adjustments", "global"))
+        self.btn_adjust_save_creature.clicked.connect(lambda: self._save_profile_from_ui("image_adjustments", "creature"))
+        self.btn_adjust_save_group.clicked.connect(lambda: self._save_profile_from_ui("image_adjustments", "group"))
 
         self.btn_steps_all.clicked.connect(self.steps_select_all)
         self.btn_steps_none.clicked.connect(self.steps_select_none)
@@ -2141,7 +2303,20 @@ class PipelineRunner(QWidget):
         tt(self.lb_scope_group, self.cb_only_group, "Optional group scope. All = all groups present in the selected creature folder.")
         tt(None, self.btn_scope_refresh, "Rescan creature folders under Inputs and refresh the Scope creature list.")
         tt(None, self.btn_use_viewer_scope, "Copy the current Viewer creature and group into Scope.")
+        tt(None, self.btn_scope_save_profile, "Save both Process Frames and Image Adjustments profiles at the active scope level.")
         tt(None, self.lb_scope_hint, "Scope filters existing content for most steps. When Split is enabled, it also defines the destination creature/group.")
+        tt(None, self.btn_params_load_global, "Load global Process Frames values from settings.json.")
+        tt(None, self.btn_params_load_creature, "Load Process Frames values from the creature profile under inputs/<creature_id>.")
+        tt(None, self.btn_params_load_group, "Load Process Frames values from the group profile under inputs/<creature_id>/groupN.")
+        tt(None, self.btn_params_save_global, "Save current Process Frames values as global defaults in settings.json.")
+        tt(None, self.btn_params_save_creature, "Save current Process Frames values to the creature profile under inputs/<creature_id>.")
+        tt(None, self.btn_params_save_group, "Save current Process Frames values to the group profile under inputs/<creature_id>/groupN.")
+        tt(None, self.btn_adjust_load_global, "Load global Image Adjustments values from settings.json.")
+        tt(None, self.btn_adjust_load_creature, "Load Image Adjustments values from the creature profile under inputs/<creature_id>.")
+        tt(None, self.btn_adjust_load_group, "Load Image Adjustments values from the group profile under inputs/<creature_id>/groupN.")
+        tt(None, self.btn_adjust_save_global, "Save current Image Adjustments values as global defaults in settings.json.")
+        tt(None, self.btn_adjust_save_creature, "Save current Image Adjustments values to the creature profile under inputs/<creature_id>.")
+        tt(None, self.btn_adjust_save_group, "Save current Image Adjustments values to the group profile under inputs/<creature_id>/groupN.")
 
         # ---- Steps ----
         tt(None, self.chk_split, "Step 1: Split a spritesheet into frames (slice_sheet.py).")
@@ -2824,6 +2999,15 @@ class PipelineRunner(QWidget):
             self.chk_deploy.isChecked(),
         ]))
 
+        creature, group = self._scope_values()
+        has_creature = bool(creature)
+        has_group = has_creature and (group is not None)
+        for btn in [self.btn_params_load_creature, self.btn_params_save_creature, self.btn_adjust_load_creature, self.btn_adjust_save_creature]:
+            btn.setEnabled(has_creature)
+        for btn in [self.btn_params_load_group, self.btn_params_save_group, self.btn_adjust_load_group, self.btn_adjust_save_group]:
+            btn.setEnabled(has_group)
+        self.btn_scope_save_profile.setEnabled(True)
+
     # ---------------- log popup + colored log ----------------
     def log_html(self) -> str:
         return self.log.toHtml()
@@ -2978,6 +3162,208 @@ class PipelineRunner(QWidget):
         creature = self.le_only_creature.currentText().strip()
         group = self.cb_only_group.currentData()
         return creature, group
+
+    def _creature_profile_path(self, creature: str) -> Path:
+        return Path(self.le_input_root.text().strip()) / creature / "_pipeline_profile.json"
+
+    def _group_profile_path(self, creature: str, group: int) -> Path:
+        return Path(self.le_input_root.text().strip()) / creature / f"group{group}" / "_pipeline_profile.json"
+
+    def _read_profile_file(self, path: Path) -> dict:
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def _write_profile_file(self, path: Path, data: dict):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def _profile_scope_level(self) -> str:
+        creature, group = self._scope_values()
+        if creature and group is not None:
+            return "group"
+        if creature:
+            return "creature"
+        return "global"
+
+    def _confirm_profile_save(self, section: str | None, level: str) -> bool:
+        creature, group = self._scope_values()
+        if level == "group":
+            target = f"creature '{creature}', group {group}"
+        elif level == "creature":
+            target = f"creature '{creature}'"
+        else:
+            target = "global defaults"
+        what = "both Process Frames and Image Adjustments" if section is None else section.replace("_", " ").title()
+        resp = QMessageBox.question(
+            self,
+            "Save Profile",
+            f"Save {what} to {target}?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        return resp == QMessageBox.Yes
+
+    def _collect_process_profile_from_ui(self) -> dict:
+        return {
+            "process_remove_bg": self.chk_remove_bg.isChecked(),
+            "process_reframe": self.chk_reframe.isChecked(),
+            "process_force_bg_output": self.chk_force_bg_output.isChecked(),
+            "process_force_bg_color": self.le_force_bg_color.text().strip() or "#FF00FF",
+            "gen_1x": self.chk_res_1x.isChecked(),
+            "gen_2x": self.chk_res_2x.isChecked(),
+            "gen_3x": self.chk_res_3x.isChecked(),
+            "gen_4x": self.chk_res_4x.isChecked(),
+            "baseline_y": self.sp_baseline_y.value(),
+            "left_limit_x": self.sp_left_limit_x.value(),
+            "left_padding": self.sp_left_padding.value(),
+            "sprite_h": self.sp_sprite_h.value(),
+            "sprite_w": self.sp_sprite_w.value(),
+            "prefer": self.cb_prefer.currentText(),
+            "tol": self.sp_tol.value(),
+            "feather": self.sp_feather.value(),
+            "shrink": self.sp_shrink.value(),
+            "despill": self.chk_despill.isChecked(),
+            "key_from": self.cb_key_from.currentText(),
+            "bg_mode": self.cb_bg_mode.currentText(),
+        }
+
+    def _apply_process_profile_to_ui(self, data: dict):
+        self.chk_remove_bg.setChecked(bool(data.get("process_remove_bg", True)))
+        self.chk_reframe.setChecked(bool(data.get("process_reframe", True)))
+        self.chk_force_bg_output.setChecked(bool(data.get("process_force_bg_output", False)))
+        self.le_force_bg_color.setText(str(data.get("process_force_bg_color", "#FF00FF")))
+        self.chk_res_1x.setChecked(bool(data.get("gen_1x", True)))
+        self.chk_res_2x.setChecked(bool(data.get("gen_2x", False)))
+        self.chk_res_3x.setChecked(bool(data.get("gen_3x", False)))
+        self.chk_res_4x.setChecked(bool(data.get("gen_4x", False)))
+        self.sp_baseline_y.setValue(int(data.get("baseline_y", self.sp_baseline_y.value())))
+        self.sp_left_limit_x.setValue(int(data.get("left_limit_x", self.sp_left_limit_x.value())))
+        self.sp_left_padding.setValue(int(data.get("left_padding", self.sp_left_padding.value())))
+        self.sp_sprite_h.setValue(int(data.get("sprite_h", self.sp_sprite_h.value())))
+        self.sp_sprite_w.setValue(int(data.get("sprite_w", self.sp_sprite_w.value())))
+        prefer = str(data.get("prefer", self.cb_prefer.currentText()))
+        if prefer in ["height", "width", "none"]:
+            self.cb_prefer.setCurrentText(prefer)
+        self.sp_tol.setValue(int(data.get("tol", self.sp_tol.value())))
+        self.sp_feather.setValue(int(data.get("feather", self.sp_feather.value())))
+        self.sp_shrink.setValue(int(data.get("shrink", self.sp_shrink.value())))
+        self.chk_despill.setChecked(bool(data.get("despill", self.chk_despill.isChecked())))
+        key_from = str(data.get("key_from", self.cb_key_from.currentText()))
+        if key_from in ["each", "first"]:
+            self.cb_key_from.setCurrentText(key_from)
+        bg_mode = str(data.get("bg_mode", self.cb_bg_mode.currentText()))
+        if bg_mode in ["global", "border"]:
+            self.cb_bg_mode.setCurrentText(bg_mode)
+        self._ui_to_settings()
+        self.refresh_ui_state()
+
+    def _collect_adjust_profile_from_ui(self) -> dict:
+        return {
+            "input_brightness": self._slider_adjust_to_stored("brightness", self._adjust_slider_value(self.sp_input_brightness)),
+            "input_contrast": self._slider_adjust_to_stored("contrast", self._adjust_slider_value(self.sp_input_contrast)),
+            "input_saturation": self._slider_adjust_to_stored("saturation", self._adjust_slider_value(self.sp_input_saturation)),
+            "input_sharpness": self._slider_adjust_to_stored("sharpness", self._adjust_slider_value(self.sp_input_sharpness)),
+            "input_gamma": self._slider_adjust_to_stored("gamma", self._adjust_slider_value(self.sp_input_gamma)),
+            "input_highlights": self._slider_adjust_to_stored("highlights", self._adjust_slider_value(self.sp_input_highlights)),
+            "input_shadows": self._slider_adjust_to_stored("shadows", self._adjust_slider_value(self.sp_input_shadows)),
+            "output_brightness": self._slider_adjust_to_stored("brightness", self._adjust_slider_value(self.sp_output_brightness)),
+            "output_contrast": self._slider_adjust_to_stored("contrast", self._adjust_slider_value(self.sp_output_contrast)),
+            "output_saturation": self._slider_adjust_to_stored("saturation", self._adjust_slider_value(self.sp_output_saturation)),
+            "output_sharpness": self._slider_adjust_to_stored("sharpness", self._adjust_slider_value(self.sp_output_sharpness)),
+            "output_gamma": self._slider_adjust_to_stored("gamma", self._adjust_slider_value(self.sp_output_gamma)),
+            "output_highlights": self._slider_adjust_to_stored("highlights", self._adjust_slider_value(self.sp_output_highlights)),
+            "output_shadows": self._slider_adjust_to_stored("shadows", self._adjust_slider_value(self.sp_output_shadows)),
+        }
+
+    def _apply_adjust_profile_to_ui(self, data: dict):
+        for key, value in data.items():
+            if hasattr(self.s, key):
+                setattr(self.s, key, value)
+        self._set_adjust_slider_value(self.sp_input_brightness, self._stored_adjust_to_slider("brightness", int(data.get("input_brightness", 100))))
+        self._set_adjust_slider_value(self.sp_input_contrast, self._stored_adjust_to_slider("contrast", int(data.get("input_contrast", 100))))
+        self._set_adjust_slider_value(self.sp_input_saturation, self._stored_adjust_to_slider("saturation", int(data.get("input_saturation", 100))))
+        self._set_adjust_slider_value(self.sp_input_sharpness, self._stored_adjust_to_slider("sharpness", int(data.get("input_sharpness", 100))))
+        self._set_adjust_slider_value(self.sp_input_gamma, self._stored_adjust_to_slider("gamma", int(data.get("input_gamma", 100))))
+        self._set_adjust_slider_value(self.sp_input_highlights, self._stored_adjust_to_slider("highlights", int(data.get("input_highlights", 0))))
+        self._set_adjust_slider_value(self.sp_input_shadows, self._stored_adjust_to_slider("shadows", int(data.get("input_shadows", 0))))
+        self._set_adjust_slider_value(self.sp_output_brightness, self._stored_adjust_to_slider("brightness", int(data.get("output_brightness", 100))))
+        self._set_adjust_slider_value(self.sp_output_contrast, self._stored_adjust_to_slider("contrast", int(data.get("output_contrast", 100))))
+        self._set_adjust_slider_value(self.sp_output_saturation, self._stored_adjust_to_slider("saturation", int(data.get("output_saturation", 100))))
+        self._set_adjust_slider_value(self.sp_output_sharpness, self._stored_adjust_to_slider("sharpness", int(data.get("output_sharpness", 100))))
+        self._set_adjust_slider_value(self.sp_output_gamma, self._stored_adjust_to_slider("gamma", int(data.get("output_gamma", 100))))
+        self._set_adjust_slider_value(self.sp_output_highlights, self._stored_adjust_to_slider("highlights", int(data.get("output_highlights", 0))))
+        self._set_adjust_slider_value(self.sp_output_shadows, self._stored_adjust_to_slider("shadows", int(data.get("output_shadows", 0))))
+        self._ui_to_settings()
+        self._update_preview_status()
+
+    def _load_profile_into_ui(self, section: str, level: str):
+        creature, group = self._scope_values()
+        if level == "global":
+            profile = (self.s.global_profiles or {}).get(section, {})
+        elif level == "creature" and creature:
+            profile = self._read_profile_file(self._creature_profile_path(creature)).get(section, {})
+        elif level == "group" and creature and group is not None:
+            profile = self._read_profile_file(self._group_profile_path(creature, group)).get(section, {})
+        else:
+            return
+        if not profile:
+            self.append_log(f"[WARN] No {section} profile found for {level}.", "warn")
+            return
+        if section == "process_frames":
+            self._apply_process_profile_to_ui(profile)
+        else:
+            self._apply_adjust_profile_to_ui(profile)
+        self.append_log(f"[OK] Loaded {section} profile from {level}.", "ok")
+
+    def _save_profile_from_ui(self, section: str, level: str):
+        if not self._confirm_profile_save(section, level):
+            return
+        creature, group = self._scope_values()
+        profile = self._collect_process_profile_from_ui() if section == "process_frames" else self._collect_adjust_profile_from_ui()
+        if level == "global":
+            if not self.s.global_profiles:
+                self.s.global_profiles = {}
+            self.s.global_profiles[section] = profile
+            self._ui_to_settings()
+            save_settings(self.settings_path, self.s)
+            self.append_log(f"[OK] Saved {section} profile to global settings.", "ok")
+            return
+        if level == "creature" and creature:
+            path = self._creature_profile_path(creature)
+        elif level == "group" and creature and group is not None:
+            path = self._group_profile_path(creature, group)
+        else:
+            return
+        data = self._read_profile_file(path)
+        data[section] = profile
+        self._write_profile_file(path, data)
+        self.append_log(f"[OK] Saved {section} profile to {path}.", "ok")
+
+    def _save_scope_profile_bundle(self):
+        level = self._profile_scope_level()
+        if not self._confirm_profile_save(None, level):
+            return
+        creature, group = self._scope_values()
+        process_profile = self._collect_process_profile_from_ui()
+        adjust_profile = self._collect_adjust_profile_from_ui()
+        if level == "global":
+            if not self.s.global_profiles:
+                self.s.global_profiles = {}
+            self.s.global_profiles["process_frames"] = process_profile
+            self.s.global_profiles["image_adjustments"] = adjust_profile
+            self._ui_to_settings()
+            save_settings(self.settings_path, self.s)
+            self.append_log("[OK] Saved full profile bundle to global settings.", "ok")
+            return
+        path = self._group_profile_path(creature, group) if level == "group" else self._creature_profile_path(creature)
+        data = self._read_profile_file(path)
+        data["process_frames"] = process_profile
+        data["image_adjustments"] = adjust_profile
+        self._write_profile_file(path, data)
+        self.append_log(f"[OK] Saved full profile bundle to {path}.", "ok")
 
     def _scope_creature_set_text(self, value: str):
         value = value.strip()

@@ -60,6 +60,7 @@ Recent UI decisions worth preserving:
   - `Scope` now explains its dual meaning in the GUI
   - `Use Viewer Selection` copies the current viewer creature/group into scope explicitly
   - the scope creature control is now an editable combo box populated from `inputs`
+  - `Save Profile` stores both Process Frames and Image Adjustments at the active scope level
 - later option to evaluate:
   - split the current scope into:
     - a dedicated split destination selector
@@ -78,6 +79,14 @@ Recent UI decisions worth preserving:
   - `Open Folder` actions now exist in the main `Paths` area
   - `Open Folder` is available in the JSON tab/panel
   - the existing viewer `Open Folder` action remains in place
+
+7) Profile persistence:
+- current status:
+  - global defaults are stored in `settings.json`
+  - current working values are also persisted in `settings.json`
+  - creature profiles are stored in `inputs/<creature_id>/_pipeline_profile.json`
+  - group profiles are stored in `inputs/<creature_id>/groupN/_pipeline_profile.json`
+  - loading is explicit; changing scope does not auto-load profiles
 
 ## Documentation conventions
 
