@@ -350,7 +350,7 @@ def draw_preview(canvas: Image.Image, hex_overlay: Image.Image | None, baseline_
 CREATURE_RE = re.compile(r"^domC\d{2}$", re.IGNORECASE)
 GROUP_RE = re.compile(r"^group[\s_\-]?(\d+)$", re.IGNORECASE)
 
-# Puedes ampliarlo si quieres (según docs)
+# Expand this list if needed, according to the docs
 VALID_GROUPS = set([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 30, 31, 32, 40, 41, 42, 50, 51])
 
 
@@ -364,7 +364,7 @@ def scan_tree(in_root: Path):
         if not cdir.is_dir():
             continue
         if not CREATURE_RE.match(cdir.name):
-            print(f"[WARN] carpeta ignorada (no criatura): {cdir}")
+            print(f"[WARN] Skipping non-creature folder: {cdir}")
             continue
 
         for gdir in cdir.iterdir():
@@ -372,11 +372,11 @@ def scan_tree(in_root: Path):
                 continue
             m = GROUP_RE.match(gdir.name)
             if not m:
-                print(f"[WARN] {cdir.name}: carpeta ignorada (no groupN): {gdir.name}")
+                print(f"[WARN] {cdir.name}: skipping non-groupN folder: {gdir.name}")
                 continue
             gid = int(m.group(1))
             if gid not in VALID_GROUPS:
-                print(f"[WARN] {cdir.name}: group{gid} no está en lista de grupos válidos -> ignorado")
+                print(f"[WARN] {cdir.name}: group{gid} is not in the allowed group list -> skipped")
                 continue
 
             items.append((cdir.name, gid, gdir))
@@ -388,20 +388,23 @@ def scan_tree(in_root: Path):
 def main():
     ap = argparse.ArgumentParser()
 
-    ap.add_argument("--in_root", required=True, help="Raíz con domCxx/groupN")
-    ap.add_argument("--out_root", required=True, help="Salida frames 450x400 en misma estructura")
+    ap.add_argument("--in_root", required=True, help="Root folder containing domCxx/groupN")
+    ap.add_argument("--out_root", required=True, help="Output root in the same creature/group structure")
 
-    ap.add_argument("--clean_root", default="", help="Opcional: cleaned (alpha) en misma estructura")
-    ap.add_argument("--forced_root", default="", help="Opcional: forced bg (RGB) en misma estructura")
-    ap.add_argument("--force_bg", default="#FF00FF")
+    ap.add_argument("--clean_root", default="", help="Optional: save the intermediate remove-bg result")
+    ap.add_argument("--forced_root", default="", help="Optional: save a forced-background helper output")
+    ap.add_argument("--remove-bg", dest="remove_bg", action="store_true", help="Run chroma/key cleanup")
+    ap.add_argument("--reframe", action="store_true", help="Resize, align, and compose onto the target canvas")
+    ap.add_argument("--force-bg", dest="force_bg", action="store_true", help="Compose the current image onto a solid background")
+    ap.add_argument("--force-bg-color", default="#FF00FF", help="Solid color used by --force-bg, for example #FF00FF")
 
-    ap.add_argument("--preview_root", default="", help="Opcional: previews en misma estructura")
-    ap.add_argument("--hex_overlay", default="", help="Opcional: overlay 450x400")
+    ap.add_argument("--preview_root", default="", help="Optional: save preview overlays in the same structure")
+    ap.add_argument("--hex_overlay", default="", help="Optional: 450x400 overlay image")
     ap.add_argument("--overlay_alpha", type=int, default=200)
 
     # Filters
-    ap.add_argument("--only_creature", default="", help="ej domC03")
-    ap.add_argument("--only_group", type=int, default=-1, help="ej 2")
+    ap.add_argument("--only_creature", default="", help="Example: domC03")
+    ap.add_argument("--only_group", type=int, default=-1, help="Example: 2")
 
     # keying
     ap.add_argument("--key", default="auto")
@@ -436,8 +439,18 @@ def main():
 
     args = ap.parse_args()
 
+    if not (args.remove_bg or args.reframe or args.force_bg):
+        raise SystemExit("You must enable at least one operation: --remove-bg, --reframe, and/or --force-bg")
+    if args.reframe and (args.canvas_w <= 0 or args.canvas_h <= 0):
+        raise SystemExit("--reframe requires --canvas_w and --canvas_h greater than 0")
+    if args.preview_root and not args.reframe:
+        raise SystemExit("--preview_root can only be used together with --reframe")
+
     in_root = Path(args.in_root)
-    out_root = Path(args.out_root); out_root.mkdir(parents=True, exist_ok=True)
+    write_main_output = args.reframe or args.force_bg
+    out_root = Path(args.out_root)
+    if write_main_output:
+        out_root.mkdir(parents=True, exist_ok=True)
 
     clean_root = Path(args.clean_root) if args.clean_root else None
     if clean_root:
@@ -446,9 +459,9 @@ def main():
     forced_root = Path(args.forced_root) if args.forced_root else None
     if forced_root:
         forced_root.mkdir(parents=True, exist_ok=True)
-        force_bg_rgb = parse_hex_color(args.force_bg)
+        force_bg_rgb = parse_hex_color(args.force_bg_color)
     else:
-        force_bg_rgb = (255, 0, 255)
+        force_bg_rgb = parse_hex_color(args.force_bg_color)
 
     preview_root = Path(args.preview_root) if args.preview_root else None
     if preview_root:
@@ -458,9 +471,9 @@ def main():
 
     # Validate filters
     if args.only_creature and not CREATURE_RE.match(args.only_creature):
-        raise SystemExit(f"--only_creature inválido: {args.only_creature}")
+        raise SystemExit(f"Invalid --only_creature: {args.only_creature}")
     if args.only_group != -1 and args.only_group not in VALID_GROUPS:
-        raise SystemExit(f"--only_group inválido/no permitido: {args.only_group}")
+        raise SystemExit(f"Invalid or unsupported --only_group: {args.only_group}")
 
     items = scan_tree(in_root)
 
@@ -468,23 +481,24 @@ def main():
     if args.only_creature:
         items = [t for t in items if t[0].lower() == args.only_creature.lower()]
         if not items:
-            raise SystemExit(f"No se encontró la criatura {args.only_creature} en {in_root}")
+            raise SystemExit(f"Creature {args.only_creature} was not found under {in_root}")
     if args.only_group != -1:
         items = [t for t in items if t[1] == args.only_group]
         if not items:
-            raise SystemExit(f"No se encontró group{args.only_group} para el filtro en {in_root}")
+            raise SystemExit(f"group{args.only_group} was not found for the selected filter under {in_root}")
 
     for creature_id, gid, gdir in items:
         # Collect input frames
         in_frames = sorted([p for p in gdir.iterdir() if p.is_file() and p.suffix.lower() == ".png"],
                            key=lambda p: natural_key(p.name))
         if not in_frames:
-            print(f"[WARN] {creature_id} group{gid}: sin PNGs -> omitido")
+            print(f"[WARN] {creature_id} group{gid}: no PNGs found -> skipped")
             continue
 
         # output dirs mirror structure
-        out_dir = out_root / creature_id / f"group{gid}"
-        out_dir.mkdir(parents=True, exist_ok=True)
+        out_dir = (out_root / creature_id / f"group{gid}") if write_main_output else None
+        if out_dir:
+            out_dir.mkdir(parents=True, exist_ok=True)
 
         cdir = (clean_root / creature_id / f"group{gid}") if clean_root else None
         if cdir:
@@ -498,79 +512,108 @@ def main():
         if pdir:
             pdir.mkdir(parents=True, exist_ok=True)
 
-        # Optional: manual key
+        # Prepare keying only when remove-bg is requested.
         manual_key_rgb = None
-        if args.key.lower() != "auto":
-            manual_key_rgb = parse_hex_color(args.key)
-
-        # If key_from == first, detect from first frame in THIS group
         group_key_rgb = None
-        if args.key.lower() == "auto" and args.key_from == "first":
-            first_img = Image.open(in_frames[0]).convert("RGBA")
-            group_key_rgb = detect_bg_color_from_borders(
-                first_img,
-                border=args.key_border,
-                sample_stride=1,
-                quant_step=args.key_quant,
-                alpha_min=args.key_alpha_min
-            )
-
-        for idx, frame_path in enumerate(in_frames):
-            img = Image.open(frame_path).convert("RGBA")
-
-            if manual_key_rgb is not None:
-                key_rgb = manual_key_rgb
-            elif args.key.lower() == "auto" and args.key_from == "each":
-                key_rgb = detect_bg_color_from_borders(
-                    img,
+        if args.remove_bg:
+            if args.key.lower() != "auto":
+                manual_key_rgb = parse_hex_color(args.key)
+            elif args.key_from == "first":
+                first_img = Image.open(in_frames[0]).convert("RGBA")
+                group_key_rgb = detect_bg_color_from_borders(
+                    first_img,
                     border=args.key_border,
                     sample_stride=1,
                     quant_step=args.key_quant,
                     alpha_min=args.key_alpha_min
                 )
-            else:
-                key_rgb = group_key_rgb if group_key_rgb is not None else (255, 0, 255)
 
-            # bg removal
-            if args.bg_mode == "global":
-                cleaned = chroma_key_soft_global(img, key_rgb, tol=max(0, args.tol), feather=max(0, args.feather))
-            else:
-                bg_mask = build_bg_mask_floodfill(img, key_rgb, tol=max(0, args.tol))
-                cleaned = apply_mask_soft_alpha(img, bg_mask, feather_px=max(0, args.feather_px))
+        for frame_path in in_frames:
+            img = Image.open(frame_path).convert("RGBA")
 
-            if args.despill:
-                cleaned = despill_magenta(cleaned, strength=0.6)
-            cleaned = alpha_shrink(cleaned, pixels=max(0, args.shrink))
+            current = img
+            force_preview_source = current
 
-            if cdir:
-                cleaned.save(cdir / frame_path.name)
+            if args.remove_bg:
+                if manual_key_rgb is not None:
+                    key_rgb = manual_key_rgb
+                elif args.key.lower() == "auto" and args.key_from == "each":
+                    key_rgb = detect_bg_color_from_borders(
+                        current,
+                        border=args.key_border,
+                        sample_stride=1,
+                        quant_step=args.key_quant,
+                        alpha_min=args.key_alpha_min
+                    )
+                else:
+                    key_rgb = group_key_rgb if group_key_rgb is not None else (255, 0, 255)
+
+                if args.bg_mode == "global":
+                    current = chroma_key_soft_global(current, key_rgb, tol=max(0, args.tol), feather=max(0, args.feather))
+                else:
+                    bg_mask = build_bg_mask_floodfill(current, key_rgb, tol=max(0, args.tol))
+                    current = apply_mask_soft_alpha(current, bg_mask, feather_px=max(0, args.feather_px))
+
+                if args.despill:
+                    current = despill_magenta(current, strength=0.6)
+                current = alpha_shrink(current, pixels=max(0, args.shrink))
+                force_preview_source = current
+
+                if cdir:
+                    current.save(cdir / frame_path.name)
 
             if fdir:
-                forced = composite_over_solid(cleaned, force_bg_rgb)
-                forced.save(fdir / frame_path.with_suffix(".png").name)
+                forced_preview = composite_over_solid(force_preview_source, force_bg_rgb)
+                forced_preview.save(fdir / frame_path.with_suffix(".png").name)
 
-            trimmed = trim_to_alpha(cleaned, margin=max(0, args.trim_margin))
-            normalized = resize_keep_aspect(trimmed, target_h=max(0, args.sprite_h), target_w=max(0, args.sprite_w), prefer=args.prefer)
+            if args.reframe:
+                trimmed = trim_to_alpha(current, margin=max(0, args.trim_margin))
+                normalized = resize_keep_aspect(
+                    trimmed,
+                    target_h=max(0, args.sprite_h),
+                    target_w=max(0, args.sprite_w),
+                    prefer=args.prefer,
+                )
 
-            canvas = paste_on_canvas(
-                normalized,
-                canvas_w=args.canvas_w,
-                canvas_h=args.canvas_h,
-                baseline_y=args.baseline_y,
-                x_mode=args.x_mode,
-                x_offset=args.x_offset,
-                left_limit_x=args.left_limit_x,
-                left_padding=args.left_padding,
-                anchor_alpha=args.anchor_alpha
-            )
+                current = paste_on_canvas(
+                    normalized,
+                    canvas_w=args.canvas_w,
+                    canvas_h=args.canvas_h,
+                    baseline_y=args.baseline_y,
+                    x_mode=args.x_mode,
+                    x_offset=args.x_offset,
+                    left_limit_x=args.left_limit_x,
+                    left_padding=args.left_padding,
+                    anchor_alpha=args.anchor_alpha
+                )
 
-            canvas.save(out_dir / frame_path.name)
+                if pdir:
+                    prev = draw_preview(current, hex_overlay, args.baseline_y, args.left_limit_x, args.overlay_alpha)
+                    prev.save(pdir / frame_path.name)
 
-            if pdir:
-                prev = draw_preview(canvas, hex_overlay, args.baseline_y, args.left_limit_x, args.overlay_alpha)
-                prev.save(pdir / frame_path.name)
+            if args.force_bg:
+                current = composite_over_solid(current, force_bg_rgb)
 
-        print(f"[OK] {creature_id} group{gid}: {len(in_frames)} frames procesados -> {out_dir}")
+            if out_dir:
+                current.save(out_dir / frame_path.name)
+
+        ops = []
+        if args.remove_bg:
+            ops.append("remove-bg")
+        if args.reframe:
+            ops.append("reframe")
+        if args.force_bg:
+            ops.append("force-bg")
+        destinations = []
+        if out_dir:
+            destinations.append(str(out_dir))
+        if cdir:
+            destinations.append(str(cdir))
+        if pdir:
+            destinations.append(str(pdir))
+        if fdir:
+            destinations.append(str(fdir))
+        print(f"[OK] {creature_id} group{gid}: processed {len(in_frames)} frames ({', '.join(ops)}) -> {', '.join(destinations)}")
 
 
 if __name__ == "__main__":

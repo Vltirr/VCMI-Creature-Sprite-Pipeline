@@ -12,10 +12,10 @@ env/
 Thumbs.db
 
 # ---- Project working folders (generated, not versioned) ----
-input_root/
-processed_root/
-cleaned_root/
-forced_root/
+inputs/
+outputs/
+cleaned_alpha/
+forced_bg/
 previews/
 anim_json
 settings.json

@@ -55,11 +55,11 @@ def slice_grid(
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("sheet", help="spritesheet PNG")
-    p.add_argument("out_root", help="directorio de salida (raíz)")
+    p.add_argument("out_root", help="output root directory")
 
     # Pipeline mode (optional)
     p.add_argument("--creature", default="", help="ej: domC03 (opcional)")
-    p.add_argument("--group", type=int, default=-1, help="grupo de animación (opcional)")
+    p.add_argument("--group", type=int, default=-1, help="animation group (optional)")
 
     p.add_argument("--cols", type=int, required=True)
     p.add_argument("--rows", type=int, required=True)
@@ -67,7 +67,7 @@ def main():
     p.add_argument("--auto_crop", action="store_true")
     p.add_argument("--crop_mode", choices=["center", "topleft"], default="center")
 
-    # Manual overrides por si algún día hay spacing/margins
+    # Manual overrides in case spacing or margins are ever needed
     p.add_argument("--frame_w", type=int, default=0)
     p.add_argument("--frame_h", type=int, default=0)
     p.add_argument("--margin_x", type=int, default=0)
@@ -81,12 +81,12 @@ def main():
     out_root = Path(args.out_root)
 
     if (args.creature and args.group == -1) or (not args.creature and args.group != -1):
-        raise SystemExit("Si usas --creature debes usar también --group (y viceversa).")
+        raise SystemExit("If you use --creature you must also use --group (and vice versa).")
 
     if args.creature:
         creature_re = re.compile(r"^domC\d{2}$", re.IGNORECASE)
         if not creature_re.match(args.creature):
-            raise SystemExit(f"Creature inválida: {args.creature} (esperado domC01..domC14)")
+            raise SystemExit(f"Invalid creature: {args.creature} (expected domC01..domC14)")
         out_dir = out_root / args.creature / f"group{args.group}"
         mode = f"{args.creature} group{args.group}"
     else:
