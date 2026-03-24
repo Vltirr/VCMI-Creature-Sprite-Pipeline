@@ -25,6 +25,17 @@ A PySide6 GUI that orchestrates a Heroes III / VCMI creature sprite pipeline:
 4. Select a creature scope (`creature_id`) and optionally a group.
 5. Tick the steps you want and press **RUN**.
 
+Scope helpers in the GUI:
+- the creature field is an editable combo box populated from `inputs/`
+- `Use Viewer Selection` copies the current viewer creature/group into scope
+- `Save Profile` stores both `Process Frames` and `Image Adjustments` at the current scope level
+- the scope hint explains that `Split Spritesheet` uses scope both as a filter and as the destination creature/group identity
+
+Profile storage:
+- global defaults live in `settings.json`
+- creature profiles live in `inputs/<creature_id>/_pipeline_profile.json`
+- group profiles live in `inputs/<creature_id>/groupN/_pipeline_profile.json`
+
 The main configuration area includes:
 - `Process Frames Defaults` for `scripts/process_frames.py`
 - `Image Adjustments` with separate `Input stage` and `Output stage` controls
@@ -42,6 +53,8 @@ The `Image Adjustments` panel supports:
 - independent `Adjust Input` and `Adjust Output` pipeline steps
 - compact read-only summaries for `Input stage` and `Output stage`
 - per-stage `Preview/Edit` and `Reset` buttons
+- quick transfer controls to copy `Input -> Output`, `Output -> Input`, or swap both adjustment sets
+- compact `Load/Save Global`, `Load/Save Creature`, and `Load/Save Group` profile actions
 - a dedicated external preview editor window for large live image inspection
 - optional side-by-side `Original` / `Adjusted` comparison in the preview editor
 - a `Single` / `Compare` mode toggle inside the preview editor
