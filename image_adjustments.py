@@ -36,6 +36,28 @@ def _scaled_mask(mask: Image.Image, strength: float) -> Image.Image:
     return mask.point(lambda i: clamp_u8(i * strength))
 
 
+def _tonal_mask(
+    mask: Image.Image,
+    strength: float,
+    *,
+    invert: bool = False,
+    bias: float = 2.8,
+    threshold: float = 0.55,
+) -> Image.Image:
+    strength = max(0.0, min(1.0, strength))
+    if strength <= 0.0:
+        return Image.new("L", mask.size, 0)
+
+    def map_value(i: int) -> int:
+        tone = i / 255.0
+        if invert:
+            tone = 1.0 - tone
+        tone = max(0.0, (tone - threshold) / max(1e-6, 1.0 - threshold))
+        return clamp_u8((tone ** bias) * 255.0 * strength)
+
+    return mask.point(map_value)
+
+
 def adjust_highlights_shadows(img: Image.Image, highlights: int, shadows: int) -> Image.Image:
     if highlights == 0 and shadows == 0:
         return img
@@ -49,13 +71,12 @@ def adjust_highlights_shadows(img: Image.Image, highlights: int, shadows: int) -
     out = rgb
 
     if shadows != 0:
-        shadow_mask = ImageOps.invert(lum)
-        shadow_mask = _scaled_mask(shadow_mask, abs(shadows) / 100.0)
+        shadow_mask = _tonal_mask(lum, abs(shadows) / 100.0, invert=True)
         target = white if shadows > 0 else black
         out = Image.composite(target, out, shadow_mask)
 
     if highlights != 0:
-        highlight_mask = _scaled_mask(lum, abs(highlights) / 100.0)
+        highlight_mask = _tonal_mask(lum, abs(highlights) / 100.0)
         target = white if highlights > 0 else black
         out = Image.composite(target, out, highlight_mask)
 

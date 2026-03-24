@@ -65,6 +65,7 @@ Auxiliary outputs:
 GUI-facing process operations:
 - `Remove Background` runs chroma/key cleanup and can emit `cleaned_alpha/...`
 - `Reframe` resizes, aligns, and writes main processed outputs under `outputs/<scale>x/...`
+- when `Reframe` runs without `Remove Background` in the same execution, the GUI reuses the matching frames from `cleaned_alpha/...` as the process input
 - `Force Background` writes the helper output under `forced_bg/...` without replacing the main processed output
 
 ### 4) Adjust output (optional)
@@ -125,6 +126,7 @@ Each stage includes:
 - the main viewer stays on the original selected frame
 - the external preview editor shows the live adjusted image
 - the preview editor can switch between single-image mode and side-by-side original-versus-adjusted comparison
+- the preview editor opens in single-image mode by default
 - preview does not write files to disk
 - file changes only happen when the corresponding pipeline step is run
 - opening preview from the viewer uses a neutral editor state by default

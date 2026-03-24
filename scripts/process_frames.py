@@ -561,6 +561,16 @@ def main():
 
                 if cdir:
                     current.save(cdir / frame_path.name)
+            elif args.reframe:
+                if not cdir:
+                    raise SystemExit("--reframe without --remove-bg requires --clean_root so cleaned alpha frames can be reused")
+                cleaned_frame = cdir / frame_path.name
+                if not cleaned_frame.exists():
+                    raise SystemExit(
+                        f"Missing cleaned alpha frame required for --reframe: {cleaned_frame}"
+                    )
+                current = Image.open(cleaned_frame).convert("RGBA")
+                force_preview_source = current
 
             if fdir:
                 forced_preview = composite_over_solid(force_preview_source, force_bg_rgb)
@@ -594,7 +604,7 @@ def main():
             if args.force_bg:
                 current = composite_over_solid(current, force_bg_rgb)
 
-            if out_dir:
+            if out_dir and (args.reframe or args.force_bg):
                 current.save(out_dir / frame_path.name)
 
         ops = []

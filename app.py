@@ -167,6 +167,7 @@ class AppSettings:
     ui_state_version: int = 0
     ui_paths_expanded: bool = False
     ui_params_expanded: bool = False
+    ui_adjustments_expanded: bool = False
     ui_log_expanded: bool = False
     ui_splitter_sizes: list[int] = None
     global_profiles: dict = field(default_factory=dict)
@@ -233,6 +234,7 @@ def save_settings(path: Path, settings: AppSettings):
             "ui_state_version": settings.ui_state_version,
             "ui_paths_expanded": settings.ui_paths_expanded,
             "ui_params_expanded": settings.ui_params_expanded,
+            "ui_adjustments_expanded": settings.ui_adjustments_expanded,
             "ui_log_expanded": settings.ui_log_expanded,
             "ui_splitter_sizes": settings.ui_splitter_sizes,
         },
@@ -466,7 +468,7 @@ class PreviewWindow(QDialog):
         self.preview_pm: QPixmap | None = None
         self.show_original = False
         self.edit_stage: str | None = "input"
-        self.preview_compare_mode = True
+        self.preview_compare_mode = False
         self._fit_on_next_refresh = True
 
         root = QVBoxLayout(self)
@@ -591,11 +593,11 @@ class PreviewWindow(QDialog):
         mode_layout.setSpacing(8)
         self.lb_mode_single = QLabel("Single")
         self.lb_mode_single.setStyleSheet("color: #4d627a;")
-        self.chk_compare_mode = ToggleSwitch(True)
-        self.chk_compare_mode.setChecked(True)
+        self.chk_compare_mode = ToggleSwitch(False)
+        self.chk_compare_mode.setChecked(False)
         self.chk_compare_mode.setToolTip("Toggle between single-image preview and side-by-side comparison.")
         self.lb_mode_compare = QLabel("Compare")
-        self.lb_mode_compare.setStyleSheet("color: #173f6b; font-weight: 600;")
+        self.lb_mode_compare.setStyleSheet("color: #4d627a;")
         mode_layout.addWidget(self.lb_mode_single)
         mode_layout.addWidget(self.chk_compare_mode)
         mode_layout.addWidget(self.lb_mode_compare)
@@ -614,7 +616,7 @@ class PreviewWindow(QDialog):
         for name, *_ in self.ADJUST_FIELDS:
             getattr(self, f"sp_{name}").slider.valueChanged.connect(self._notify_values_changed)
 
-        self._set_preview_compare_mode(True)
+        self._set_preview_compare_mode(False)
         self._update_stage_action_styles()
 
     def _make_adjust_slider(self, minimum, maximum, value, suffix=""):
@@ -894,6 +896,7 @@ class PipelineRunner(QWidget):
         self.preview_source_image: Image.Image | None = None
         self.preview_window: PreviewWindow | None = None
         self._pending_viewer_state_restore = bool(getattr(self.s, "viewer_zoom_scale", 0.0) and getattr(self.s, "viewer_zoom_scale", 0.0) > 0)
+        self._pending_viewer_refresh_state: tuple[QTransform, int, int] | None = None
         self._build_ui()
         self._apply_tooltips()
         self._load_to_ui()
@@ -955,7 +958,10 @@ class PipelineRunner(QWidget):
             if hasattr(self, "btn_toggle_paths"):
                 self.btn_toggle_paths.setChecked(bool(getattr(self.s, "ui_paths_expanded", False)))
             if hasattr(self, "btn_toggle_params"):
-                self.btn_toggle_params.setChecked(bool(getattr(self.s, "ui_params_expanded", False)))
+                shared_open = bool(getattr(self.s, "ui_params_expanded", False))
+                self.btn_toggle_params.setChecked(shared_open)
+                if hasattr(self, "btn_toggle_adjustments"):
+                    self.btn_toggle_adjustments.setChecked(shared_open)
 
             log_on = bool(getattr(self.s, "ui_log_expanded", False))
             if first_run:
@@ -978,6 +984,8 @@ class PipelineRunner(QWidget):
                 self.s.ui_paths_expanded = bool(self.btn_toggle_paths.isChecked())
             if hasattr(self, "btn_toggle_params"):
                 self.s.ui_params_expanded = bool(self.btn_toggle_params.isChecked())
+            if hasattr(self, "btn_toggle_adjustments"):
+                self.s.ui_adjustments_expanded = bool(self.btn_toggle_params.isChecked())
             if hasattr(self, "btn_toggle_log"):
                 self.s.ui_log_expanded = bool(self.btn_toggle_log.isChecked())
             if hasattr(self, "splitter"):
@@ -1445,6 +1453,7 @@ class PipelineRunner(QWidget):
         ]:
             btn.setAutoRaise(True)
             params_profile_layout.addWidget(btn)
+        params_header.addSpacing(22)
         params_header.addWidget(self.params_profile_bar)
         params_header.addStretch(1)
         outer.addLayout(params_header)
@@ -1604,6 +1613,7 @@ class PipelineRunner(QWidget):
         ]:
             btn.setAutoRaise(True)
             adjust_profile_layout.addWidget(btn)
+        adjust_header.addSpacing(22)
         adjust_header.addWidget(self.adjust_profile_bar)
         adjust_header.addStretch(1)
         adj_outer.addLayout(adjust_header)
@@ -1913,6 +1923,7 @@ class PipelineRunner(QWidget):
         self.cb_view_scale.addItem("2x", 2)
         self.cb_view_scale.addItem("3x", 3)
         self.cb_view_scale.addItem("4x", 4)
+        self.cb_view_scale.setCurrentIndex(3)
 
         self.cb_view_creature = QComboBox()
         self.cb_view_group = QComboBox()
@@ -2804,6 +2815,28 @@ class PipelineRunner(QWidget):
         except Exception:
             self.viewer.fit_to_view()
 
+    def _capture_viewer_refresh_state(self):
+        if self.viewer._pixmap_item.pixmap().isNull():
+            self._pending_viewer_refresh_state = None
+            return
+        self._pending_viewer_refresh_state = (
+            QTransform(self.viewer.transform()),
+            int(self.viewer.horizontalScrollBar().value()),
+            int(self.viewer.verticalScrollBar().value()),
+        )
+
+    def _restore_pending_viewer_refresh_state(self):
+        if not self._pending_viewer_refresh_state:
+            return
+        transform, hscroll, vscroll = self._pending_viewer_refresh_state
+        self._pending_viewer_refresh_state = None
+        try:
+            self.viewer.setTransform(transform)
+            self.viewer.horizontalScrollBar().setValue(hscroll)
+            self.viewer.verticalScrollBar().setValue(vscroll)
+        except Exception:
+            pass
+
     def _schedule_viewer_preview(self, stage: str | None = None):
         if stage is not None:
             self.preview_stage_preference = stage
@@ -2821,6 +2854,7 @@ class PipelineRunner(QWidget):
         source = self._load_preview_source_image(p)
         if source is None:
             self.viewer.set_image(p)
+            self._restore_pending_viewer_refresh_state()
             self._update_preview_window(None, None)
             self._update_preview_status()
             return
@@ -2828,6 +2862,7 @@ class PipelineRunner(QWidget):
         original_pm = self._pixmap_from_pil(source)
         self.viewer.set_pixmap(original_pm, preserve_view=True)
         self._restore_initial_viewer_state_if_needed()
+        self._restore_pending_viewer_refresh_state()
 
         if self.preview_window is not None and self.preview_window.isVisible():
             try:
@@ -3455,6 +3490,9 @@ class PipelineRunner(QWidget):
         prev_gid = self.cb_view_group.currentData()
         prev_frame = self.cb_view_frame.currentData()
 
+        if keep_selection:
+            self._capture_viewer_refresh_state()
+
         root = self.viewer_source_root()
 
         self.cb_view_creature.blockSignals(True)
@@ -3468,7 +3506,8 @@ class PipelineRunner(QWidget):
         self.cb_view_group.addItem("(Select)", None)
         self.cb_view_frame.addItem("(Select)", None)
         self.viewer_stop_anim()
-        self.viewer.set_image(None)
+        if not keep_selection:
+            self.viewer.set_image(None)
 
         if root and root.exists() and root.is_dir():
             creatures = sorted([p.name for p in root.iterdir() if p.is_dir() and CREATURE_ID_RE.match(p.name)])
@@ -3483,6 +3522,9 @@ class PipelineRunner(QWidget):
             self.cb_view_source.setCurrentIndex(prev_src)
             if prev_cre is not None:
                 i = self.cb_view_creature.findData(prev_cre)
+                if i == -1:
+                    self.cb_view_creature.addItem(str(prev_cre), prev_cre)
+                    i = self.cb_view_creature.findData(prev_cre)
                 if i != -1:
                     self.cb_view_creature.setCurrentIndex(i)
                     self.viewer_refresh_groups(keep_selection=True, prev_gid=prev_gid, prev_frame=prev_frame)
@@ -3510,7 +3552,8 @@ class PipelineRunner(QWidget):
         self.cb_view_group.addItem("(Select)", None)
         self.cb_view_frame.addItem("(Select)", None)
         self.viewer_stop_anim()
-        self.viewer.set_image(None)
+        if not keep_selection:
+            self.viewer.set_image(None)
 
         if root and creature:
             cdir = root / creature
@@ -3529,6 +3572,9 @@ class PipelineRunner(QWidget):
 
         if keep_selection and prev_gid is not None:
             ig = self.cb_view_group.findData(prev_gid)
+            if ig == -1:
+                self.cb_view_group.addItem(group_label(int(prev_gid)), prev_gid)
+                ig = self.cb_view_group.findData(prev_gid)
             if ig != -1:
                 self.cb_view_group.setCurrentIndex(ig)
                 self.viewer_refresh_frames(keep_selection=True, prev_frame=prev_frame)
@@ -3550,7 +3596,8 @@ class PipelineRunner(QWidget):
         self.cb_view_frame.clear()
         self.cb_view_frame.addItem("(Select)", None)
         self.viewer_stop_anim()
-        self.viewer.set_image(None)
+        if not keep_selection:
+            self.viewer.set_image(None)
 
         if root and creature and gid is not None:
             gdir = root / creature / f"group{gid}"
@@ -3571,6 +3618,10 @@ class PipelineRunner(QWidget):
         if self.cb_view_frame.count() > 1:
             self.cb_view_frame.setCurrentIndex(1)
             self.viewer_load_selected()
+        else:
+            self.viewer.set_image(None)
+            self.preview_source_path = None
+            self.preview_source_image = None
 
     def viewer_selected_path(self) -> Path | None:
         root = self.viewer_source_root()
@@ -3912,7 +3963,8 @@ class PipelineRunner(QWidget):
                     remove_bg=self.chk_remove_bg.isChecked(),
                     reframe=self.chk_reframe.isChecked(),
                     force_bg=False,
-                    clean_root=str(Path(s.processed_root).parent / "cleaned_alpha") if self.chk_remove_bg.isChecked() else "",
+                    clean_root=str(Path(s.processed_root).parent / "cleaned_alpha")
+                    if (self.chk_remove_bg.isChecked() or self.chk_reframe.isChecked()) else "",
                     forced_root=str(Path(s.processed_root).parent / "forced_bg") if self.chk_force_bg_output.isChecked() else "",
                     preview_root=self._aux_scale_root("previews", scale) if self.chk_reframe.isChecked() else "",
                 ))
