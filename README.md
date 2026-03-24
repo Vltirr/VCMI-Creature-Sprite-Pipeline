@@ -47,6 +47,7 @@ The `Process Frames Defaults` panel now includes operation toggles and output re
 - `1x`, `2x`, `3x`, `4x`
 - processed outputs are written under `outputs/<scale>x/<creature_id>/groupN/*.png`
 - `cleaned_alpha/` and `forced_bg/` are shared helper outputs
+- when `Reframe` runs without `Remove Background`, the GUI reuses the matching frames from `cleaned_alpha/`
 - JSON build and deploy still use `1x` as the primary source, while deploy can also copy `2x`, `3x`, and `4x` assets to `sprites2x`, `sprites3x`, and `sprites4x`
 
 The `Image Adjustments` panel supports:
@@ -58,6 +59,7 @@ The `Image Adjustments` panel supports:
 - a dedicated external preview editor window for large live image inspection
 - optional side-by-side `Original` / `Adjusted` comparison in the preview editor
 - a `Single` / `Compare` mode toggle inside the preview editor
+- the preview editor opens in `Single` mode by default
 - sliders in the preview editor centered at `0` for neutral GUI values
 
 ## Quick start (CLI)
