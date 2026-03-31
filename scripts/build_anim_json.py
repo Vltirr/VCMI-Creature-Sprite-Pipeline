@@ -113,6 +113,7 @@ def main():
     ap.add_argument("--output_root", required=True)
     ap.add_argument("--basepath_prefix", default="battle/")
     ap.add_argument("--creature_regex", default=r"^domC\d{2}$")
+    ap.add_argument("--only_creature", default="")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
 
@@ -123,6 +124,11 @@ def main():
     cre_re = re.compile(args.creature_regex, re.IGNORECASE)
     creature_dirs = sorted([p for p in input_root.iterdir() if p.is_dir() and cre_re.match(p.name)],
                            key=lambda p: natural_key(p.name))
+
+    if args.only_creature:
+        creature_dirs = [p for p in creature_dirs if p.name.lower() == args.only_creature.lower()]
+        if not creature_dirs:
+            raise SystemExit(f"Creature {args.only_creature} was not found under {input_root}")
 
     if not creature_dirs:
         raise SystemExit(f"No creature folders were found under {input_root}")
