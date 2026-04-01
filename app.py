@@ -1563,7 +1563,8 @@ class PipelineRunner(QWidget):
         def _toggle_params(checked: bool):
             self.params_fill.setVisible(checked)
             self.btn_toggle_params.setIcon(self._ico_arrow_down if checked else self._ico_arrow_right)
-
+            if checked and hasattr(self, "btn_toggle_log") and self.btn_toggle_log.isChecked():
+                self.btn_toggle_log.setChecked(False)
             self._ensure_splitter_log_visible()
 
         self.btn_toggle_params.toggled.connect(_toggle_params)
@@ -1819,6 +1820,8 @@ class PipelineRunner(QWidget):
         def _toggle_adjustments(checked: bool):
             self.adjustments_scroll.setVisible(checked)
             self.btn_toggle_adjustments.setIcon(self._ico_arrow_down if checked else self._ico_arrow_right)
+            if checked and hasattr(self, "btn_toggle_log") and self.btn_toggle_log.isChecked():
+                self.btn_toggle_log.setChecked(False)
 
         self.btn_toggle_adjustments.toggled.connect(_toggle_adjustments)
 
@@ -2616,22 +2619,6 @@ class PipelineRunner(QWidget):
             sys.executable, script_path(s.scripts_dir, "process_frames.py"),
             "--in_root", in_root,
             "--out_root", out_root,
-            "--key", "auto",
-            "--key_from", s.key_from,
-            "--bg_mode", s.bg_mode,
-            "--tol", str(s.tol),
-            "--feather", str(s.feather),
-            "--shrink", str(s.shrink),
-            "--canvas_w", str(canvas_w),
-            "--canvas_h", str(canvas_h),
-            "--baseline_y", str(s.baseline_y * scale),
-            "--sprite_h", str(s.sprite_h * scale if s.sprite_h > 0 else 0),
-            "--sprite_w", str(getattr(s, "sprite_w", 0) * scale if getattr(s, "sprite_w", 0) > 0 else 0),
-            "--prefer", str(getattr(s, "prefer", "height")),
-            "--x_mode", "left_limit",
-            "--left_limit_x", str(s.left_limit_x * scale),
-            "--left_padding", str(s.left_padding * scale),
-            "--overlay_alpha", str(s.overlay_alpha),
         ]
         if clean_root:
             cmd += ["--clean_root", clean_root]
@@ -2640,14 +2627,34 @@ class PipelineRunner(QWidget):
         if preview_root:
             cmd += ["--preview_root", preview_root]
         if remove_bg:
+            cmd += [
+                "--key", "auto",
+                "--key_from", s.key_from,
+                "--bg_mode", s.bg_mode,
+                "--tol", str(s.tol),
+                "--feather", str(s.feather),
+                "--shrink", str(s.shrink),
+            ]
             cmd += ["--remove-bg"]
         if reframe:
+            cmd += [
+                "--canvas_w", str(canvas_w),
+                "--canvas_h", str(canvas_h),
+                "--baseline_y", str(s.baseline_y * scale),
+                "--sprite_h", str(s.sprite_h * scale if s.sprite_h > 0 else 0),
+                "--sprite_w", str(getattr(s, "sprite_w", 0) * scale if getattr(s, "sprite_w", 0) > 0 else 0),
+                "--prefer", str(getattr(s, "prefer", "height")),
+                "--x_mode", "left_limit",
+                "--left_limit_x", str(s.left_limit_x * scale),
+                "--left_padding", str(s.left_padding * scale),
+                "--overlay_alpha", str(s.overlay_alpha),
+            ]
             cmd += ["--reframe"]
         if force_bg:
             cmd += ["--force-bg"]
-        if s.despill:
+        if remove_bg and s.despill:
             cmd += ["--despill"]
-        if s.hex_overlay.strip():
+        if reframe and s.hex_overlay.strip():
             cmd += ["--hex_overlay", s.hex_overlay.strip()]
         if creature:
             cmd += ["--only_creature", creature]
@@ -3125,6 +3132,13 @@ class PipelineRunner(QWidget):
         prefix = f"[{self._log_ts()}][{step}] "
         safe = (prefix + text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         self.log.append(f'<span style="color:{c}">{safe}</span>')
+        self.log.moveCursor(QTextCursor.End)
+        self.log.ensureCursorVisible()
+        try:
+            sb = self.log.verticalScrollBar()
+            sb.setValue(sb.maximum())
+        except Exception:
+            pass
         if self.log_dialog and self.log_dialog.isVisible():
             # keep popup in sync (cheap but effective)
             self.log_dialog.refresh()
@@ -3158,7 +3172,7 @@ class PipelineRunner(QWidget):
         f, d = safe_clear_dir_contents(folder)
         self.append_log(f"[OK] Cleared Input Root: {f} files, {d} folders removed.", "ok")
         self._refresh_scope_creature_choices()
-        self.viewer_refresh_all(keep_selection=False)
+        self.viewer_refresh_all(keep_selection=True)
 
     def clear_outputs(self):
         processed = Path(self.le_processed_root.text().strip())
@@ -3188,7 +3202,7 @@ class PipelineRunner(QWidget):
             f, d = safe_clear_dir_contents(t)
             self.append_log(f"[OK] Cleared: {t} ({f} files, {d} folders)", "ok")
 
-        self.viewer_refresh_all(keep_selection=False)
+        self.viewer_refresh_all(keep_selection=True)
         self.json_refresh_all(keep_selection=False)
         self._refresh_scope_creature_choices()
 
@@ -3887,9 +3901,18 @@ class PipelineRunner(QWidget):
                     "Process Frames requires at least one action: Remove Background, Reframe, or Force Background.",
                 )
                 return False
-            if not self._selected_process_scales():
+            if self.chk_reframe.isChecked() and not self._selected_process_scales():
                 QMessageBox.critical(self, "Error", "Process Frames requires at least one output resolution (1x, 2x, 3x or 4x).")
                 return False
+            if self.chk_reframe.isChecked() and not self.chk_remove_bg.isChecked():
+                cleaned_root = str(Path(self.s.processed_root).parent / "cleaned_alpha")
+                if not self._scope_has_png_content(cleaned_root):
+                    QMessageBox.critical(
+                        self,
+                        "Error",
+                        "Reframe without Remove Background requires cleaned alpha frames for the selected scope.\n\nRun Remove Background first, or select a scope that already has cleaned_alpha content.",
+                    )
+                    return False
 
         if self.chk_adjust_output.isChecked():
             selected_scales = self._selected_process_scales()
@@ -3955,19 +3978,36 @@ class PipelineRunner(QWidget):
             self._append_adjust_command(cmds, s.input_root, "input")
 
         if self.chk_process.isChecked():
-            for scale in self._selected_process_scales():
+            cleaned_root = str(Path(s.processed_root).parent / "cleaned_alpha")
+            forced_root = str(Path(s.processed_root).parent / "forced_bg") if self.chk_force_bg_output.isChecked() else ""
+
+            if self.chk_remove_bg.isChecked() or self.chk_force_bg_output.isChecked():
                 cmds.append(self._build_process_command(
                     s.input_root,
-                    self._processed_scale_root(scale),
-                    scale=scale,
+                    self._processed_scale_root(1),
+                    scale=1,
                     remove_bg=self.chk_remove_bg.isChecked(),
-                    reframe=self.chk_reframe.isChecked(),
+                    reframe=False,
                     force_bg=False,
-                    clean_root=str(Path(s.processed_root).parent / "cleaned_alpha")
-                    if (self.chk_remove_bg.isChecked() or self.chk_reframe.isChecked()) else "",
-                    forced_root=str(Path(s.processed_root).parent / "forced_bg") if self.chk_force_bg_output.isChecked() else "",
-                    preview_root=self._aux_scale_root("previews", scale) if self.chk_reframe.isChecked() else "",
+                    clean_root=cleaned_root if self.chk_remove_bg.isChecked() else "",
+                    forced_root=forced_root,
+                    preview_root="",
                 ))
+
+            if self.chk_reframe.isChecked():
+                process_in_root = cleaned_root if not self.chk_remove_bg.isChecked() else cleaned_root
+                for scale in self._selected_process_scales():
+                    cmds.append(self._build_process_command(
+                        process_in_root,
+                        self._processed_scale_root(scale),
+                        scale=scale,
+                        remove_bg=False,
+                        reframe=True,
+                        force_bg=False,
+                        clean_root="",
+                        forced_root="",
+                        preview_root=self._aux_scale_root("previews", scale),
+                    ))
 
         if self.chk_adjust_output.isChecked():
             for scale in self._selected_process_scales():
@@ -3980,6 +4020,8 @@ class PipelineRunner(QWidget):
                 "--output_root", s.anim_json_root,
                 "--basepath_prefix", "battle/",
             ]
+            if creature:
+                cmd += ["--only_creature", creature]
             cmds.append(cmd)
 
         if self.chk_deploy.isChecked():

@@ -104,7 +104,7 @@ The pipeline step order in the GUI is:
 6. Deploy
 
 The main configuration area below the pipeline includes:
-- `Process Frames Defaults`
+- `Process Frames Options`
 - `Image Adjustments`
 
 ### Image Adjustments

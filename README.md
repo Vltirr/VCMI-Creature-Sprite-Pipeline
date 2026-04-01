@@ -37,7 +37,7 @@ Profile storage:
 - group profiles live in `inputs/<creature_id>/groupN/_pipeline_profile.json`
 
 The main configuration area includes:
-- `Process Frames Defaults` for `scripts/process_frames.py`
+- `Process Frames Options` for frame cleanup, reframing, helper outputs, and multi-resolution generation
 - `Image Adjustments` with separate `Input stage` and `Output stage` controls
 
 The `Process Frames Defaults` panel now includes operation toggles and output resolution selection:
@@ -48,6 +48,7 @@ The `Process Frames Defaults` panel now includes operation toggles and output re
 - processed outputs are written under `outputs/<scale>x/<creature_id>/groupN/*.png`
 - `cleaned_alpha/` and `forced_bg/` are shared helper outputs
 - when `Reframe` runs without `Remove Background`, the GUI reuses the matching frames from `cleaned_alpha/`
+- `Remove Background` and `Force Background` helper generation run once for the selected scope, while `Reframe` fans out per selected resolution
 - JSON build and deploy still use `1x` as the primary source, while deploy can also copy `2x`, `3x`, and `4x` assets to `sprites2x`, `sprites3x`, and `sprites4x`
 
 The `Image Adjustments` panel supports:
@@ -71,7 +72,7 @@ See `docs/SCRIPTS.md` for full parameters. Typical pipeline:
 - Process 1x: `py scripts/process_frames.py --in_root inputs --out_root outputs/1x --remove-bg --reframe --canvas_w 450 --canvas_h 400 --baseline_y 263 --sprite_h 100`
 - Process 4x: `py scripts/process_frames.py --in_root inputs --out_root outputs/4x --remove-bg --reframe --canvas_w 1800 --canvas_h 1600 --baseline_y 1052 --sprite_h 400`
 - Adjust output: `py scripts/adjust_frames.py --in_root outputs/1x --out_root outputs/1x --creature goblin_darter --sharpness 120`
-- Build JSON: `py scripts/build_anim_json.py --input_root outputs/1x --output_root anim_json_root --basepath_prefix battle/`
+- Build JSON: `py scripts/build_anim_json.py --input_root outputs/1x --output_root anim_json_root --basepath_prefix battle/ --only_creature goblin_darter`
 - Deploy: `py scripts/deploy_assets.py --in_root outputs/1x --in_root_2x outputs/2x --in_root_3x outputs/3x --in_root_4x outputs/4x --out_root <mod_assets_root>/sprites --json_in anim_json_root --json_out <mod_json_root>`
 
 ## Repository layout

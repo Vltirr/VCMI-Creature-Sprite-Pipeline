@@ -439,8 +439,8 @@ def main():
 
     args = ap.parse_args()
 
-    if not (args.remove_bg or args.reframe or args.force_bg):
-        raise SystemExit("You must enable at least one operation: --remove-bg, --reframe, and/or --force-bg")
+    if not (args.remove_bg or args.reframe or args.force_bg or args.forced_root):
+        raise SystemExit("You must enable at least one operation or helper output: --remove-bg, --reframe, --force-bg, and/or --forced_root")
     if args.reframe and (args.canvas_w <= 0 or args.canvas_h <= 0):
         raise SystemExit("--reframe requires --canvas_w and --canvas_h greater than 0")
     if args.preview_root and not args.reframe:

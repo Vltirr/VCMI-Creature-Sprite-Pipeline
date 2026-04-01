@@ -92,7 +92,7 @@ Example:
 py scripts/process_frames.py ^
   --in_root inputs ^
   --out_root outputs/1x ^
-  --only_creature goblin_darter ^
+  --creature goblin_darter ^
   --remove-bg --reframe ^
   --canvas_w 450 ^
   --canvas_h 400 ^
@@ -112,6 +112,7 @@ Parameters:
 - `--input_root <outputs/1x>`
 - `--output_root <anim_json_root>`
 - `--basepath_prefix <prefix>`
+- `--only_creature <creature_id>` (optional)
 
 Important:
 - Frame paths in JSON include the group folder, e.g. `group3/frame_000.png`
@@ -119,7 +120,7 @@ Important:
 
 Example:
 ```bash
-py scripts/build_anim_json.py --input_root outputs/1x --output_root anim_json_root --basepath_prefix battle/
+py scripts/build_anim_json.py --input_root outputs/1x --output_root anim_json_root --basepath_prefix battle/ --only_creature goblin_darter
 ```
 
 ## 5) `scripts/deploy_assets.py`
