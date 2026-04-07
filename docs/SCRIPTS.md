@@ -11,7 +11,8 @@ This document describes each script and its main parameters.
 Slices a grid spritesheet and exports frames as `frame_000.png`, `frame_001.png`, ...
 
 Modes:
-- Pipeline mode: with `--creature <creature_id>` and `--group N`, outputs to `out_root/creature_id/groupN/`
+- Structured mode: with `--creature <creature_id>` and `--group N`, outputs to `out_root/creature_id/groupN/`
+- Creature-only mode: with `--creature <creature_id>` only, outputs to `out_root/creature_id/`
 - Quick mode: without creature/group, outputs directly into `out_root/`
 
 Common parameters:
@@ -68,8 +69,8 @@ Inputs / outputs:
 - `--out_root <dir>`: output root with the same structure
 
 Scope:
-- `--creature <creature_id>` (optional)
-- `--group N` (optional)
+- `--only_creature <creature_id>` (optional)
+- `--only_group N` (optional)
 
 Operations:
 - `--remove-bg`: run chroma/key cleanup

@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from PySide6.QtCore import QProcess, Qt, QUrl, QByteArray, QTimer, QSize, Signal
-from PySide6.QtGui import QPixmap, QDesktopServices, QPainter, QTextCursor, QKeySequence, QShortcut, QTextDocument, QColor, QBrush, QTransform, QIcon, QPen
+from PySide6.QtGui import QPixmap, QDesktopServices, QPainter, QTextCursor, QKeySequence, QShortcut, QTextDocument, QColor, QBrush, QTransform, QIcon, QPen, QFont
 from PIL import Image
 from PIL.ImageQt import ImageQt
 
@@ -118,6 +118,8 @@ class AppSettings:
     viewer_zoom_scale: float = 0.0
     viewer_hscroll: int = 0
     viewer_vscroll: int = 0
+    viewer_source: str = "Inputs"
+    viewer_scale: int = 4
 
     baseline_y: int = 263
     left_limit_x: int = 174
@@ -135,6 +137,11 @@ class AppSettings:
     split_cols: int = 6
     split_rows: int = 6
     split_autocrop: bool = True
+    split_sheet_path: str = ""
+    split_target_creature: str = ""
+    split_target_group: int = -1
+    scope_creature: str = ""
+    scope_group: int = -1
     gen_1x: bool = True
     gen_2x: bool = False
     gen_3x: bool = False
@@ -225,10 +232,17 @@ def save_settings(path: Path, settings: AppSettings):
             "viewer_zoom_scale": settings.viewer_zoom_scale,
             "viewer_hscroll": settings.viewer_hscroll,
             "viewer_vscroll": settings.viewer_vscroll,
+            "viewer_source": settings.viewer_source,
+            "viewer_scale": settings.viewer_scale,
             "overlay_alpha": settings.overlay_alpha,
             "split_cols": settings.split_cols,
             "split_rows": settings.split_rows,
             "split_autocrop": settings.split_autocrop,
+            "split_sheet_path": settings.split_sheet_path,
+            "split_target_creature": settings.split_target_creature,
+            "split_target_group": settings.split_target_group,
+            "scope_creature": settings.scope_creature,
+            "scope_group": settings.scope_group,
             "window_geometry_b64": settings.window_geometry_b64,
             "window_maximized": settings.window_maximized,
             "ui_state_version": settings.ui_state_version,
@@ -437,6 +451,156 @@ class ToggleSwitch(QWidget):
         p.drawEllipse(knob_x, knob_y, knob_d, knob_d)
         p.end()
 
+
+
+class SplitDialog(QDialog):
+    def __init__(self, parent=None, *, sheet_path: str = "", cols: int = 6, rows: int = 6,
+                 autocrop: bool = True, output_root: str = "", creatures: list[str] | None = None,
+                 default_creature: str = "", default_group: int | None = None):
+        super().__init__(parent)
+        self.setWindowTitle("Split Spritesheet")
+        self.setModal(True)
+        self.resize(760, 280)
+
+        root = QVBoxLayout(self)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(6)
+        root.addLayout(grid)
+
+        self.le_sheet = QLineEdit(sheet_path)
+        self.btn_browse_sheet = QPushButton("Browse...")
+        self.btn_open_sheet = QToolButton()
+        self.btn_open_sheet.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
+        self.btn_open_sheet.setAutoRaise(True)
+
+        self.sp_cols = QSpinBox()
+        self.sp_cols.setRange(1, 200)
+        self.sp_cols.setValue(cols)
+        self.sp_rows = QSpinBox()
+        self.sp_rows.setRange(1, 200)
+        self.sp_rows.setValue(rows)
+        self.chk_autocrop = QCheckBox("Auto Crop")
+        self.chk_autocrop.setChecked(bool(autocrop))
+
+        self.cb_creature = QComboBox()
+        self.cb_creature.setEditable(True)
+        self.cb_creature.setInsertPolicy(QComboBox.NoInsert)
+        self.cb_creature.addItem("")
+        for creature in (creatures or []):
+            self.cb_creature.addItem(creature)
+        if default_creature:
+            idx = self.cb_creature.findText(default_creature, Qt.MatchFixedString)
+            if idx >= 0:
+                self.cb_creature.setCurrentIndex(idx)
+            else:
+                self.cb_creature.setEditText(default_creature)
+
+        self.cb_group = QComboBox()
+        self.cb_group.addItem("None", None)
+        for g in VALID_GROUPS:
+            self.cb_group.addItem(group_label(g), g)
+        if default_group is not None:
+            idx = self.cb_group.findData(default_group)
+            if idx >= 0:
+                self.cb_group.setCurrentIndex(idx)
+
+        self.le_output_root = QLineEdit(output_root)
+        self.btn_browse_output = QPushButton("Browse...")
+        self.btn_open_output = QToolButton()
+        self.btn_open_output.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
+        self.btn_open_output.setAutoRaise(True)
+
+        self.lb_destination = QLabel("")
+        self.lb_destination.setStyleSheet("color: #4b5e77;")
+
+        grid.addWidget(QLabel("Spritesheet"), 0, 0)
+        grid.addWidget(self.le_sheet, 0, 1)
+        grid.addWidget(self.btn_browse_sheet, 0, 2)
+        grid.addWidget(self.btn_open_sheet, 0, 3)
+
+        grid.addWidget(QLabel("Cols"), 1, 0)
+        grid.addWidget(self.sp_cols, 1, 1)
+        grid.addWidget(QLabel("Rows"), 1, 2)
+        grid.addWidget(self.sp_rows, 1, 3)
+        grid.addWidget(self.chk_autocrop, 2, 1, 1, 2)
+
+        grid.addWidget(QLabel("Creature"), 3, 0)
+        grid.addWidget(self.cb_creature, 3, 1, 1, 3)
+        grid.addWidget(QLabel("Group"), 4, 0)
+        grid.addWidget(self.cb_group, 4, 1, 1, 3)
+
+        grid.addWidget(QLabel("Output Root"), 5, 0)
+        grid.addWidget(self.le_output_root, 5, 1)
+        grid.addWidget(self.btn_browse_output, 5, 2)
+        grid.addWidget(self.btn_open_output, 5, 3)
+
+        grid.addWidget(QLabel("Destination"), 6, 0)
+        grid.addWidget(self.lb_destination, 6, 1, 1, 3)
+
+        btns = QHBoxLayout()
+        btns.addStretch(1)
+        self.btn_cancel = QPushButton("Cancel")
+        self.btn_run = QPushButton("Run Split")
+        btns.addWidget(self.btn_cancel)
+        btns.addWidget(self.btn_run)
+        root.addLayout(btns)
+
+        self.btn_browse_sheet.clicked.connect(self._browse_sheet)
+        self.btn_open_sheet.clicked.connect(self._open_sheet_folder)
+        self.btn_browse_output.clicked.connect(self._browse_output)
+        self.btn_open_output.clicked.connect(self._open_output_folder)
+        self.btn_cancel.clicked.connect(self.reject)
+        self.btn_run.clicked.connect(self.accept)
+        self.cb_creature.currentTextChanged.connect(self._update_destination)
+        self.cb_group.currentIndexChanged.connect(self._update_destination)
+        self.le_output_root.textChanged.connect(self._update_destination)
+        self._update_destination()
+
+    def _browse_sheet(self):
+        f, _ = QFileDialog.getOpenFileName(
+            self, "Select Spritesheet", os.getcwd(),
+            "Images (*.png *.jpg *.jpeg *.webp *.bmp);;All Files (*)"
+        )
+        if f:
+            self.le_sheet.setText(f)
+
+    def _browse_output(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Output Root", self.le_output_root.text().strip() or os.getcwd())
+        if folder:
+            self.le_output_root.setText(folder)
+
+    def _open_sheet_folder(self):
+        target = Path(self.le_sheet.text().strip()).parent if self.le_sheet.text().strip() else Path.cwd()
+        if target.exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
+
+    def _open_output_folder(self):
+        target = Path(self.le_output_root.text().strip()) if self.le_output_root.text().strip() else Path.cwd()
+        if target.exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
+
+    def _update_destination(self):
+        out_root = self.le_output_root.text().strip()
+        creature = self.cb_creature.currentText().strip()
+        group = self.cb_group.currentData()
+        if out_root and creature and group is not None:
+            self.lb_destination.setText(str(Path(out_root) / creature / f"group{group}"))
+        elif out_root:
+            self.lb_destination.setText(str(Path(out_root)))
+        else:
+            self.lb_destination.setText("-")
+
+    def values(self) -> dict:
+        return {
+            "sheet_path": self.le_sheet.text().strip(),
+            "cols": int(self.sp_cols.value()),
+            "rows": int(self.sp_rows.value()),
+            "autocrop": bool(self.chk_autocrop.isChecked()),
+            "creature": self.cb_creature.currentText().strip(),
+            "group": self.cb_group.currentData(),
+            "output_root": self.le_output_root.text().strip(),
+        }
 
 
 class PreviewWindow(QDialog):
@@ -1166,6 +1330,7 @@ class PipelineRunner(QWidget):
         self.lb_hex_overlay, _ = add_path_row(6, "Hex Overlay (Optional PNG)", self.le_hex_overlay, False)
 
         # Toolbar row: Save + Reset/Clears (left), Run/Stop (right)
+        self.btn_split_dialog = QPushButton("Split Spritesheet...")
         self.btn_save = QPushButton("Save")
         self.btn_reset_paths = QPushButton("Reset Defaults")
         self.btn_clear_input = QPushButton("Clear Input")
@@ -1175,12 +1340,13 @@ class PipelineRunner(QWidget):
         self.btn_stop = QPushButton("Stop")
         self.btn_stop.setEnabled(False)
 
-        for b in [self.btn_save, self.btn_reset_paths, self.btn_clear_input, self.btn_clear_outputs]:
+        for b in [self.btn_split_dialog, self.btn_save, self.btn_reset_paths, self.btn_clear_input, self.btn_clear_outputs]:
             b.setMinimumWidth(140)
         for b in [self.btn_run, self.btn_stop]:
             b.setMinimumWidth(116)
 
         bar = QHBoxLayout()
+        bar.addWidget(self.btn_split_dialog)
         bar.addWidget(self.btn_save)
         bar.addWidget(self.btn_reset_paths)
         bar.addWidget(self.btn_clear_input)
@@ -1190,6 +1356,7 @@ class PipelineRunner(QWidget):
         bar.addWidget(self.btn_stop)
 
         self.btn_save.clicked.connect(self.on_save)
+        self.btn_split_dialog.clicked.connect(self.open_split_dialog)
         self.btn_reset_paths.clicked.connect(self.reset_paths_defaults)
         self.btn_clear_input.clicked.connect(self.clear_input_root)
         self.btn_clear_outputs.clicked.connect(self.clear_outputs)
@@ -1207,6 +1374,7 @@ class PipelineRunner(QWidget):
         paths_header.addWidget(self.btn_toggle_paths)
         paths_header.addWidget(QLabel("Paths"))
         paths_header.addSpacing(8)
+        paths_header.addWidget(self.btn_split_dialog)
         paths_header.addWidget(self.btn_save)
         paths_header.addWidget(self.btn_reset_paths)
         paths_header.addWidget(self.btn_clear_input)
@@ -1234,14 +1402,14 @@ class PipelineRunner(QWidget):
         # -------- Scope + Steps + Split (compact row) --------
         row2 = QHBoxLayout()
 
-        self.gb_scope = QGroupBox("Scope (Optional)")
+        self.gb_scope = QGroupBox("Scope")
         sg = QGridLayout(self.gb_scope)
         sg.setHorizontalSpacing(8)
         sg.setVerticalSpacing(4)
 
         self.lb_scope_creature = QLabel("Creature")
         self.lb_scope_group = QLabel("Group")
-        self.lb_scope_hint = QLabel("Scope filters existing content. For Split, it also defines the destination creature/group.")
+        self.lb_scope_hint = QLabel("Scope filters existing content for the selected pipeline steps. Empty creature means all creatures.")
         self.lb_scope_hint.setWordWrap(True)
         self.lb_scope_hint.setStyleSheet("color: #4b5e77; font-size: 11px;")
 
@@ -1253,8 +1421,6 @@ class PipelineRunner(QWidget):
         self.btn_scope_refresh = QToolButton()
         self.btn_scope_refresh.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
         self.btn_scope_refresh.setAutoRaise(True)
-        self.btn_use_viewer_scope = QPushButton("Use Viewer Selection")
-        self.btn_use_viewer_scope.setMinimumWidth(0)
         self.btn_scope_save_profile = QPushButton("Save Profile")
         self.btn_scope_save_profile.setMinimumWidth(0)
 
@@ -1263,33 +1429,27 @@ class PipelineRunner(QWidget):
         for g in VALID_GROUPS:
             self.cb_only_group.addItem(group_label(g), g)
 
-        scope_creature_row = QWidget()
-        scope_creature_layout = QHBoxLayout(scope_creature_row)
-        scope_creature_layout.setContentsMargins(0, 0, 0, 0)
-        scope_creature_layout.setSpacing(6)
-        scope_creature_layout.addWidget(self.le_only_creature, 1)
-        scope_creature_layout.addWidget(self.btn_scope_refresh)
-        scope_creature_layout.addWidget(self.btn_use_viewer_scope)
-        scope_group_row = QWidget()
-        scope_group_layout = QHBoxLayout(scope_group_row)
-        scope_group_layout.setContentsMargins(0, 0, 0, 0)
-        scope_group_layout.setSpacing(6)
-        scope_group_layout.addWidget(self.cb_only_group, 1)
-        scope_group_layout.addWidget(self.btn_scope_save_profile, 0)
+        scope_row = QWidget()
+        scope_row_layout = QHBoxLayout(scope_row)
+        scope_row_layout.setContentsMargins(0, 0, 0, 0)
+        scope_row_layout.setSpacing(6)
+        scope_row_layout.addWidget(self.lb_scope_creature, 0, Qt.AlignVCenter)
+        scope_row_layout.addWidget(self.le_only_creature, 1, Qt.AlignVCenter)
+        scope_row_layout.addWidget(self.lb_scope_group, 0, Qt.AlignVCenter)
+        scope_row_layout.addWidget(self.cb_only_group, 1, Qt.AlignVCenter)
+        scope_row_layout.addWidget(self.btn_scope_refresh, 0, Qt.AlignVCenter)
+        scope_row_layout.addWidget(self.btn_scope_save_profile, 0, Qt.AlignVCenter)
 
-        sg.addWidget(self.lb_scope_creature, 0, 0)
-        sg.addWidget(scope_creature_row, 0, 1)
-        sg.addWidget(self.lb_scope_group, 1, 0)
-        sg.addWidget(scope_group_row, 1, 1)
-        sg.addWidget(self.lb_scope_hint, 2, 0, 1, 2)
+        sg.addWidget(scope_row, 0, 0, 1, 2)
+        self.lb_scope_hint.setVisible(False)
 
         row2.addWidget(self.gb_scope, 1)
 
         self.gb_steps = QGroupBox("Pipeline Steps")
         st = QVBoxLayout(self.gb_steps)
+        st.setContentsMargins(8, 8, 8, 8)
         st.setSpacing(4)
 
-        self.chk_split = QCheckBox("Split Spritesheet")
         self.chk_adjust_input = QCheckBox("Adjust Input")
         self.chk_process = QCheckBox("Process Frames")
         self.chk_adjust_output = QCheckBox("Adjust Output")
@@ -1297,86 +1457,56 @@ class PipelineRunner(QWidget):
         self.chk_deploy = QCheckBox("Deploy")
 
         # Default: no steps selected
-        self.chk_split.setChecked(False)
         self.chk_adjust_input.setChecked(False)
         self.chk_process.setChecked(False)
         self.chk_adjust_output.setChecked(False)
         self.chk_json.setChecked(False)
         self.chk_deploy.setChecked(False)
 
-
-        st.addWidget(self.chk_split)
-        st.addWidget(self.chk_adjust_input)
-        st.addWidget(self.chk_process)
-        st.addWidget(self.chk_adjust_output)
-        st.addWidget(self.chk_json)
-        st.addWidget(self.chk_deploy)
-
-        steps_btns = QHBoxLayout()
+        self.chk_adjust_input.setText("[1] Adjust Input")
+        self.chk_process.setText("[2] Process Frames")
+        self.chk_adjust_output.setText("[3] Adjust Output")
+        self.chk_json.setText("[4] Build Json")
+        self.chk_deploy.setText("[5] Deploy")
+        for w in [self.chk_adjust_input, self.chk_process, self.chk_adjust_output, self.chk_json, self.chk_deploy]:
+            w.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.btn_steps_all = QPushButton("All")
         self.btn_steps_none = QPushButton("None")
         self.btn_steps_all.setMinimumWidth(64)
         self.btn_steps_none.setMinimumWidth(64)
-        steps_btns.addWidget(self.btn_steps_all)
-        steps_btns.addWidget(self.btn_steps_none)
-        steps_btns.addStretch(1)
-        st.addLayout(steps_btns)
+        self.btn_steps_all.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.btn_steps_none.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        steps_row = QHBoxLayout()
+        steps_row.setContentsMargins(0, 0, 0, 0)
+        steps_row.setSpacing(18)
+        steps_row.setAlignment(Qt.AlignVCenter)
+        for step_widget in [
+            self.chk_adjust_input,
+            self.chk_process,
+            self.chk_adjust_output,
+            self.chk_json,
+            self.chk_deploy,
+        ]:
+            steps_row.addWidget(step_widget, 0, Qt.AlignVCenter)
+
+        steps_row.addSpacing(8)
+        steps_btns_row = QHBoxLayout()
+        steps_btns_row.setContentsMargins(0, 0, 0, 0)
+        steps_btns_row.setSpacing(4)
+        steps_btns_row.addWidget(self.btn_steps_all, 0, Qt.AlignVCenter)
+        steps_btns_row.addWidget(self.btn_steps_none, 0, Qt.AlignVCenter)
+        steps_row.addLayout(steps_btns_row, 0)
+        steps_row.addStretch(1)
+        st.addLayout(steps_row)
 
         row2.addWidget(self.gb_steps, 1)
-
-        self.gb_split = QGroupBox("Split Options")
-        so = QGridLayout(self.gb_split)
-        so.setHorizontalSpacing(8)
-        so.setVerticalSpacing(4)
-
-        self.lb_sheet = QLabel("Spritesheet")
-        self.lb_cols = QLabel("Cols")
-        self.lb_rows = QLabel("Rows")
-
-        self.le_sheet = QLineEdit()
-        self.le_sheet.setPlaceholderText("Spritesheet file path")
-
-        self.btn_sheet = QPushButton("Browse...")
-        self.btn_sheet_open = QToolButton()
-        self.btn_sheet_open.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
-        self.btn_sheet_open.setAutoRaise(True)
-        self.sp_cols = QSpinBox(); self.sp_cols.setRange(1, 200)
-        self.sp_rows = QSpinBox(); self.sp_rows.setRange(1, 200)
-        self.chk_autocrop = QCheckBox("Auto Crop")
-
-        so.addWidget(self.lb_sheet, 0, 0)
-        so.addWidget(self.le_sheet, 0, 1)
-        so.addWidget(self.btn_sheet, 0, 2)
-        so.addWidget(self.btn_sheet_open, 0, 3)
-        so.addWidget(self.lb_cols, 1, 0)
-        so.addWidget(self.sp_cols, 1, 1)
-        so.addWidget(self.lb_rows, 2, 0)
-        so.addWidget(self.sp_rows, 2, 1)
-        so.addWidget(self.chk_autocrop, 3, 1)
-
-        def browse_sheet():
-            f, _ = QFileDialog.getOpenFileName(
-                self, "Select Spritesheet", os.getcwd(),
-                "Images (*.png *.jpg *.jpeg *.webp *.bmp);;All Files (*)"
-            )
-            if f:
-                self.le_sheet.setText(f)
-
-        self.btn_sheet.clicked.connect(browse_sheet)
-        self.btn_sheet_open.clicked.connect(
-            lambda: self._open_folder_path(
-                Path(self.le_sheet.text().strip()).parent if self.le_sheet.text().strip() else Path.cwd()
-            )
-        )
-
-        row2.addWidget(self.gb_split, 2)
 
         # -------- Run/Stop (primary actions) --------
         self.gb_run = QGroupBox("")
         rr = QVBoxLayout(self.gb_run)
         rr.setContentsMargins(8, 8, 8, 8)
-        rr.setSpacing(8)
-        self.gb_run.setFixedWidth(132)
+        rr.setSpacing(6)
+        self.gb_run.setFixedWidth(300)
 
         # Make RUN visually primary
         self.btn_run.setText("Run")
@@ -1385,7 +1515,9 @@ class PipelineRunner(QWidget):
         f.setBold(True)
         f.setPointSize(max(10, f.pointSize() + 1))
         self.btn_run.setFont(f)
-        self.btn_run.setMinimumHeight(46)
+        self.btn_run.setMinimumHeight(34)
+        self.btn_run.setMinimumWidth(120)
+        self.btn_run.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.btn_run.setStyleSheet(
             "QPushButton { background-color: #2E7D32; color: white; border: 1px solid #1B5E20; border-radius: 6px; }"
             "QPushButton:hover { background-color: #388E3C; }"
@@ -1394,15 +1526,21 @@ class PipelineRunner(QWidget):
 
         self.btn_stop.setText("Stop")
         self.btn_stop.setIcon(self.style().standardIcon(QStyle.SP_MediaStop))
-        self.btn_stop.setMinimumHeight(38)
+        self.btn_stop.setMinimumHeight(34)
+        self.btn_stop.setMinimumWidth(120)
+        self.btn_stop.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.btn_stop.setStyleSheet(
             "QPushButton { border: 1px solid #B71C1C; border-radius: 6px; }"
             "QPushButton:hover { background-color: #FFEBEE; }"
         )
 
-        rr.addWidget(self.btn_run)
-        rr.addWidget(self.btn_stop)
-        rr.addStretch(1)
+        run_row = QHBoxLayout()
+        run_row.setContentsMargins(0, 0, 0, 0)
+        run_row.setSpacing(6)
+        run_row.setAlignment(Qt.AlignCenter)
+        run_row.addWidget(self.btn_run)
+        run_row.addWidget(self.btn_stop)
+        rr.addLayout(run_row)
 
         row2.addWidget(self.gb_run, 0)
 
@@ -1928,8 +2066,6 @@ class PipelineRunner(QWidget):
         self.cb_view_scale.addItem("4x", 4)
         self.cb_view_scale.setCurrentIndex(3)
 
-        self.cb_view_creature = QComboBox()
-        self.cb_view_group = QComboBox()
         self.cb_view_frame = QComboBox()
 
         self.btn_view_refresh = QPushButton("Refresh")
@@ -1942,15 +2078,6 @@ class PipelineRunner(QWidget):
         controls.addWidget(QLabel("Resolution"))
         controls.addWidget(self.cb_view_scale)
         controls.addWidget(self.btn_view_refresh)
-
-
-
-        controls.addSpacing(6)
-        controls.addWidget(QLabel("Creature"))
-        controls.addWidget(self.cb_view_creature)
-
-        controls.addWidget(QLabel("Group"))
-        controls.addWidget(self.cb_view_group)
 
         controls.addWidget(QLabel("Frame"))
         controls.addWidget(self.cb_view_frame)
@@ -2186,16 +2313,19 @@ class PipelineRunner(QWidget):
         # -------- Signals / bindings --------
         for le in [
             self.le_scripts_dir, self.le_input_root, self.le_processed_root, self.le_anim_json_root,
-            self.le_mod_assets_root, self.le_mod_json_root, self.le_hex_overlay, self.le_sheet
+            self.le_mod_assets_root, self.le_mod_json_root, self.le_hex_overlay
         ]:
             le.textChanged.connect(self.refresh_ui_state)
         self.le_only_creature.lineEdit().textChanged.connect(self.refresh_ui_state)
+        self.le_only_creature.currentTextChanged.connect(lambda: self._refresh_scope_group_choices(select_first_with_content=True))
+        self.le_only_creature.currentTextChanged.connect(lambda: self.viewer_refresh_all(keep_selection=True))
         self.le_input_root.textChanged.connect(lambda _=None: self._refresh_scope_creature_choices())
+        self.le_input_root.textChanged.connect(lambda _=None: self._refresh_scope_group_choices(select_first_with_content=True))
         self.btn_scope_refresh.clicked.connect(self._refresh_scope_creature_choices)
+        self.btn_scope_refresh.clicked.connect(lambda: self._refresh_scope_group_choices(select_first_with_content=True))
 
         self.cb_only_group.currentIndexChanged.connect(self.refresh_ui_state)
-        self.chk_split.toggled.connect(self.refresh_ui_state)
-        self.chk_split.toggled.connect(self._update_scope_hint)
+        self.cb_only_group.currentIndexChanged.connect(lambda: self.viewer_refresh_all(keep_selection=True))
         self.chk_adjust_input.toggled.connect(self.refresh_ui_state)
         self.chk_process.toggled.connect(self.refresh_ui_state)
         self.chk_adjust_output.toggled.connect(self.refresh_ui_state)
@@ -2208,7 +2338,6 @@ class PipelineRunner(QWidget):
         self.chk_res_2x.toggled.connect(self.refresh_ui_state)
         self.chk_res_3x.toggled.connect(self.refresh_ui_state)
         self.chk_res_4x.toggled.connect(self.refresh_ui_state)
-        self.btn_use_viewer_scope.clicked.connect(self._use_viewer_selection_for_scope)
         self.btn_scope_save_profile.clicked.connect(self._save_scope_profile_bundle)
         self.btn_adjust_copy_input_to_output.clicked.connect(lambda: self._copy_adjustment_stage("input", "output"))
         self.btn_adjust_copy_output_to_input.clicked.connect(lambda: self._copy_adjustment_stage("output", "input"))
@@ -2232,8 +2361,6 @@ class PipelineRunner(QWidget):
         self.btn_view_refresh.clicked.connect(lambda: self.viewer_refresh_all(keep_selection=True))
         self.cb_view_source.currentIndexChanged.connect(lambda: self.viewer_refresh_all(keep_selection=True))
         self.cb_view_scale.currentIndexChanged.connect(lambda: self.viewer_refresh_all(keep_selection=True))
-        self.cb_view_creature.currentIndexChanged.connect(lambda: self.viewer_refresh_groups(keep_selection=True))
-        self.cb_view_group.currentIndexChanged.connect(lambda: self.viewer_refresh_frames(keep_selection=True))
         self.cb_view_frame.currentIndexChanged.connect(self.viewer_load_selected)
         self.btn_open_folder.clicked.connect(self.viewer_open_folder)
         self.btn_viewer_preview.clicked.connect(self._open_preview_window)
@@ -2316,9 +2443,12 @@ class PipelineRunner(QWidget):
         tt(self.lb_scope_creature, self.le_only_creature, "Optional creature scope. You can type a creature_id manually or pick one discovered under Inputs. Empty = all creatures.")
         tt(self.lb_scope_group, self.cb_only_group, "Optional group scope. All = all groups present in the selected creature folder.")
         tt(None, self.btn_scope_refresh, "Rescan creature folders under Inputs and refresh the Scope creature list.")
-        tt(None, self.btn_use_viewer_scope, "Copy the current Viewer creature and group into Scope.")
         tt(None, self.btn_scope_save_profile, "Save both Process Frames and Image Adjustments profiles at the active scope level.")
-        tt(None, self.lb_scope_hint, "Scope filters existing content for most steps. When Split is enabled, it also defines the destination creature/group.")
+        scope_tip = "Scope filters existing content for the selected pipeline steps and also determines which creature/group the viewer shows. Empty creature means all creatures."
+        tt(None, self.lb_scope_hint, scope_tip)
+        tt(None, self.gb_scope, scope_tip)
+        tt(None, self.le_only_creature, scope_tip)
+        tt(None, self.cb_only_group, scope_tip)
         tt(None, self.btn_params_load_global, "Load global Process Frames values from settings.json.")
         tt(None, self.btn_params_load_creature, "Load Process Frames values from the creature profile under inputs/<creature_id>.")
         tt(None, self.btn_params_load_group, "Load Process Frames values from the group profile under inputs/<creature_id>/groupN.")
@@ -2333,24 +2463,17 @@ class PipelineRunner(QWidget):
         tt(None, self.btn_adjust_save_group, "Save current Image Adjustments values to the group profile under inputs/<creature_id>/groupN.")
 
         # ---- Steps ----
-        tt(None, self.chk_split, "Step 1: Split a spritesheet into frames (slice_sheet.py).")
-        tt(None, self.chk_adjust_input, "Step 2: Apply image adjustments to frames in input_root using adjust_frames.py.")
-        tt(None, self.chk_process, "Step 3: Process frames (chroma key removal + scale + align to 450x400).")
-        tt(None, self.chk_adjust_output, "Step 4: Apply image adjustments to frames in processed_root using adjust_frames.py.")
-        tt(None, self.chk_json, "Step 5: Build <creature_id>.json animation files from processed frames.")
-        tt(None, self.chk_deploy, "Step 6: Deploy PNGs + merge JSON incrementally into mod folder.")
+        tt(None, self.btn_split_dialog, "Open the Split Spritesheet tool in a separate dialog.")
+        tt(None, self.chk_adjust_input, "Step 1: Apply image adjustments to frames in input_root using adjust_frames.py.")
+        tt(None, self.chk_process, "Step 2: Process frames (background cleanup and/or reframing).")
+        tt(None, self.chk_adjust_output, "Step 3: Apply image adjustments to frames in processed_root using adjust_frames.py.")
+        tt(None, self.chk_json, "Step 4: Build <creature_id>.json animation files from processed frames.")
+        tt(None, self.chk_deploy, "Step 5: Deploy PNGs + merge JSON incrementally into mod folder.")
+        tt(None, self.gb_steps, "Select which pipeline steps to run. Steps execute in numeric order.")
         if hasattr(self, "btn_steps_all"):
             tt(None, self.btn_steps_all, "Select all pipeline steps.")
         if hasattr(self, "btn_steps_none"):
             tt(None, self.btn_steps_none, "Deselect all pipeline steps.")
-
-        # ---- Split options ----
-        tt(self.lb_sheet, self.le_sheet, "Input spritesheet image to split.")
-        tt(None, self.btn_sheet, "Browse for spritesheet.")
-        tt(None, self.btn_sheet_open, "Open the current spritesheet folder.")
-        tt(self.lb_cols, self.sp_cols, "Grid columns in spritesheet.")
-        tt(self.lb_rows, self.sp_rows, "Grid rows in spritesheet.")
-        tt(None, self.chk_autocrop, "Auto-crop spritesheet to be divisible by rows/cols.")
 
         # ---- Process defaults ----
         tt(None, self.btn_toggle_params, "Show/Hide the frame-processing options used by the Process Frames step.")
@@ -2367,9 +2490,7 @@ class PipelineRunner(QWidget):
         # ---- Viewer controls ----
         tt(None, self.cb_view_source, "Select viewer source root (Inputs/Outputs/Cleaned Alpha/Previews/Forced Background/Deployed).")
         tt(None, self.cb_view_scale, "Select the resolution variant to browse for processed, preview, cleaned, or forced outputs.")
-        tt(None, self.btn_view_refresh, "Refresh viewer lists (creature/group/frame).")
-        tt(None, self.cb_view_creature, "Select creature folder under current source root.")
-        tt(None, self.cb_view_group, "Select animation group (groupN).")
+        tt(None, self.btn_view_refresh, "Refresh viewer content for the current scope and selected source.")
         tt(None, self.cb_view_frame, "Select PNG frame to preview.")
         tt(None, self.btn_open_folder, "Open selected folder in file explorer.")
         tt(None, self.btn_viewer_preview, "Open the preview editor for the current viewer frame.")
@@ -2425,9 +2546,6 @@ class PipelineRunner(QWidget):
 
 # ---------------- dynamic UI state ----------------
     def _wire_dynamic_ui(self):
-        self.gb_split.setEnabled(self.chk_split.isChecked())
-        self.chk_split.toggled.connect(self.gb_split.setEnabled)
-
         def sync_params_enabled():
             enabled = self.chk_process.isChecked()
             self.gb_params_outer.setVisible(True)
@@ -2789,8 +2907,8 @@ class PipelineRunner(QWidget):
             stage_text = f"Editing {stage.title()} stage" if stage else "Editing preview"
         else:
             stage_text = f"{stage.title()} stage" if stage else "No active adjustments"
-        creature = self.cb_view_creature.currentText().strip() or "-"
-        group = self.cb_view_group.currentText().strip() or "-"
+        creature = self.le_only_creature.currentText().strip() or "-"
+        group = self.cb_only_group.currentText().strip() or "-"
         frame = p.name if p else "No frame selected"
         return f"{stage_text} | {creature} | {group} | {frame}"
 
@@ -2901,6 +3019,11 @@ class PipelineRunner(QWidget):
         self.le_mod_json_root.setText(s.mod_json_root)
         self.le_hex_overlay.setText(s.hex_overlay)
         self._refresh_scope_creature_choices()
+        self._scope_creature_set_text(getattr(s, "scope_creature", ""))
+        self._refresh_scope_group_choices(
+            preferred_group=(getattr(s, "scope_group", -1) if getattr(s, "scope_group", -1) >= 0 else None),
+            select_first_with_content=(getattr(s, "scope_group", -1) < 0),
+        )
         self._update_scope_hint()
 
         self.sp_baseline_y.setValue(s.baseline_y)
@@ -2926,10 +3049,16 @@ class PipelineRunner(QWidget):
         if hasattr(self, "le_canvas_bg"):
             self.le_canvas_bg.setText(getattr(s, "viewer_canvas_bg", "#404040"))
             self._apply_canvas_bg()
-
-        self.sp_cols.setValue(s.split_cols)
-        self.sp_rows.setValue(s.split_rows)
-        self.chk_autocrop.setChecked(bool(s.split_autocrop))
+        if hasattr(self, "cb_view_source"):
+            source_text = getattr(s, "viewer_source", "Inputs") or "Inputs"
+            idx = self.cb_view_source.findText(source_text, Qt.MatchFixedString)
+            if idx >= 0:
+                self.cb_view_source.setCurrentIndex(idx)
+        if hasattr(self, "cb_view_scale"):
+            wanted_scale = int(getattr(s, "viewer_scale", 4) or 4)
+            idx = self.cb_view_scale.findData(wanted_scale)
+            if idx >= 0:
+                self.cb_view_scale.setCurrentIndex(idx)
 
         self._set_adjust_slider_value(self.sp_input_brightness, self._stored_adjust_to_slider("brightness", getattr(s, "input_brightness", 100)))
         self._set_adjust_slider_value(self.sp_input_contrast, self._stored_adjust_to_slider("contrast", getattr(s, "input_contrast", 100)))
@@ -2986,10 +3115,15 @@ class PipelineRunner(QWidget):
             s.viewer_vscroll = int(self.viewer.verticalScrollBar().value())
         except Exception:
             pass
-
-        s.split_cols = self.sp_cols.value()
-        s.split_rows = self.sp_rows.value()
-        s.split_autocrop = self.chk_autocrop.isChecked()
+        if hasattr(self, "cb_view_source"):
+            s.viewer_source = self.cb_view_source.currentText()
+        if hasattr(self, "cb_view_scale"):
+            try:
+                s.viewer_scale = int(self.cb_view_scale.currentData() or 4)
+            except Exception:
+                s.viewer_scale = 4
+        s.scope_creature = self.le_only_creature.currentText().strip()
+        s.scope_group = int(self.cb_only_group.currentData()) if self.cb_only_group.currentData() is not None else -1
 
         s.input_brightness = self._slider_adjust_to_stored("brightness", self._adjust_slider_value(self.sp_input_brightness))
         s.input_contrast = self._slider_adjust_to_stored("contrast", self._adjust_slider_value(self.sp_input_contrast))
@@ -3008,7 +3142,6 @@ class PipelineRunner(QWidget):
         s.output_shadows = self._slider_adjust_to_stored("shadows", self._adjust_slider_value(self.sp_output_shadows))
 
     def steps_select_all(self):
-        self.chk_split.setChecked(True)
         self.chk_adjust_input.setChecked(True)
         self.chk_process.setChecked(True)
         self.chk_adjust_output.setChecked(True)
@@ -3016,7 +3149,6 @@ class PipelineRunner(QWidget):
         self.chk_deploy.setChecked(True)
 
     def steps_select_none(self):
-        self.chk_split.setChecked(False)
         self.chk_adjust_input.setChecked(False)
         self.chk_process.setChecked(False)
         self.chk_adjust_output.setChecked(False)
@@ -3025,7 +3157,6 @@ class PipelineRunner(QWidget):
 
     def refresh_ui_state(self):
         # Keep pipeline step checkboxes always interactive; validation happens on Run.
-        self.chk_split.setEnabled(True)
         self.chk_adjust_input.setEnabled(True)
         self.chk_process.setEnabled(True)
         self.chk_adjust_output.setEnabled(True)
@@ -3033,7 +3164,6 @@ class PipelineRunner(QWidget):
         self.chk_deploy.setEnabled(True)
 
         self.btn_run.setEnabled(any([
-            self.chk_split.isChecked(),
             self.chk_adjust_input.isChecked(),
             self.chk_process.isChecked(),
             self.chk_adjust_output.isChecked(),
@@ -3044,10 +3174,18 @@ class PipelineRunner(QWidget):
         creature, group = self._scope_values()
         has_creature = bool(creature)
         has_group = has_creature and (group is not None)
-        for btn in [self.btn_params_load_creature, self.btn_params_save_creature, self.btn_adjust_load_creature, self.btn_adjust_save_creature]:
+        creature_process_exists = has_creature and self._profile_has_section(self._creature_profile_path(creature), "process_frames")
+        group_process_exists = has_group and self._profile_has_section(self._group_profile_path(creature, group), "process_frames")
+        creature_adjust_exists = has_creature and self._profile_has_section(self._creature_profile_path(creature), "image_adjustments")
+        group_adjust_exists = has_group and self._profile_has_section(self._group_profile_path(creature, group), "image_adjustments")
+        for btn in [self.btn_params_save_creature, self.btn_adjust_save_creature]:
             btn.setEnabled(has_creature)
-        for btn in [self.btn_params_load_group, self.btn_params_save_group, self.btn_adjust_load_group, self.btn_adjust_save_group]:
+        for btn in [self.btn_params_save_group, self.btn_adjust_save_group]:
             btn.setEnabled(has_group)
+        self.btn_params_load_creature.setEnabled(bool(creature_process_exists))
+        self.btn_params_load_group.setEnabled(bool(group_process_exists))
+        self.btn_adjust_load_creature.setEnabled(bool(creature_adjust_exists))
+        self.btn_adjust_load_group.setEnabled(bool(group_adjust_exists))
         self.btn_scope_save_profile.setEnabled(True)
 
     # ---------------- log popup + colored log ----------------
@@ -3209,7 +3347,7 @@ class PipelineRunner(QWidget):
     # ---------------- scope ----------------
     def _scope_values(self):
         creature = self.le_only_creature.currentText().strip()
-        group = self.cb_only_group.currentData()
+        group = self._selected_group_value()
         return creature, group
 
     def _creature_profile_path(self, creature: str) -> Path:
@@ -3225,6 +3363,10 @@ class PipelineRunner(QWidget):
             return json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             return {}
+
+    def _profile_has_section(self, path: Path, section: str) -> bool:
+        data = self._read_profile_file(path)
+        return isinstance(data.get(section), dict) and bool(data.get(section))
 
     def _write_profile_file(self, path: Path, data: dict):
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -3379,6 +3521,7 @@ class PipelineRunner(QWidget):
             self._ui_to_settings()
             save_settings(self.settings_path, self.s)
             self.append_log(f"[OK] Saved {section} profile to global settings.", "ok")
+            self.refresh_ui_state()
             return
         if level == "creature" and creature:
             path = self._creature_profile_path(creature)
@@ -3390,6 +3533,7 @@ class PipelineRunner(QWidget):
         data[section] = profile
         self._write_profile_file(path, data)
         self.append_log(f"[OK] Saved {section} profile to {path}.", "ok")
+        self.refresh_ui_state()
 
     def _save_scope_profile_bundle(self):
         level = self._profile_scope_level()
@@ -3452,28 +3596,141 @@ class PipelineRunner(QWidget):
             self.le_only_creature.setCurrentIndex(0)
         self.le_only_creature.blockSignals(False)
 
-    def _use_viewer_selection_for_scope(self):
-        creature = self.cb_view_creature.currentData()
-        group = self.cb_view_group.currentData()
-        if creature:
-            self._scope_creature_set_text(str(creature))
-        if group is None:
-            self.cb_only_group.setCurrentIndex(0)
-        else:
-            idx = self.cb_only_group.findData(group)
+    def _scope_group_has_png(self, creature: str, group: int) -> bool:
+        if not creature:
+            return False
+        root_text = self.le_input_root.text().strip()
+        if not root_text:
+            return False
+        gdir = Path(root_text) / creature / f"group{group}"
+        if not gdir.exists() or not gdir.is_dir():
+            return False
+        return any(p.is_file() and p.suffix.lower() == ".png" for p in gdir.iterdir())
+
+    def _refresh_scope_group_choices(self, preferred_group: int | None = None, select_first_with_content: bool = False):
+        creature = self.le_only_creature.currentText().strip()
+        current_group = self.cb_only_group.currentData()
+        self.cb_only_group.blockSignals(True)
+        self.cb_only_group.clear()
+        self.cb_only_group.addItem("All", None)
+
+        first_with_content_index = -1
+        for g in VALID_GROUPS:
+            self.cb_only_group.addItem(group_label(g), g)
+            idx = self.cb_only_group.count() - 1
+            if self._scope_group_has_png(creature, g):
+                font = QFont()
+                font.setBold(True)
+                self.cb_only_group.setItemData(idx, font, Qt.FontRole)
+                if first_with_content_index == -1:
+                    first_with_content_index = idx
+
+        target_idx = 0
+        wanted_group = preferred_group if preferred_group is not None else current_group
+        if preferred_group is None and select_first_with_content and first_with_content_index >= 0:
+            target_idx = first_with_content_index
+        elif wanted_group is not None:
+            idx = self.cb_only_group.findData(wanted_group)
             if idx >= 0:
-                self.cb_only_group.setCurrentIndex(idx)
-        self._update_scope_hint()
+                target_idx = idx
+        self.cb_only_group.setCurrentIndex(target_idx)
+        self.cb_only_group.blockSignals(False)
+        self.refresh_ui_state()
 
     def _update_scope_hint(self):
-        if self.chk_split.isChecked():
-            self.lb_scope_hint.setText("Scope filters existing content for most steps. With Split enabled, it also defines the destination creature/group.")
-        else:
-            self.lb_scope_hint.setText("Scope filters existing content for the selected pipeline steps. Empty creature means all creatures.")
+        self.lb_scope_hint.setText("Scope filters existing content for the selected pipeline steps. Empty creature means all creatures.")
+
+    def open_split_dialog(self):
+        if getattr(self, "proc", None):
+            QMessageBox.information(self, "Split Spritesheet", "Wait for the current process to finish before starting a split.")
+            return
+        creatures = []
+        root_text = self.le_input_root.text().strip()
+        if root_text:
+            root = Path(root_text)
+            if root.exists() and root.is_dir():
+                creatures = sorted(
+                    p.name for p in root.iterdir()
+                    if p.is_dir() and CREATURE_ID_RE.match(p.name)
+                )
+        creature, group = self._scope_values()
+        dlg = SplitDialog(
+            self,
+            sheet_path=getattr(self.s, "split_sheet_path", ""),
+            cols=self.s.split_cols,
+            rows=self.s.split_rows,
+            autocrop=self.s.split_autocrop,
+            output_root=self.s.input_root,
+            creatures=creatures,
+            default_creature=getattr(self.s, "split_target_creature", ""),
+            default_group=(getattr(self.s, "split_target_group", -1) if getattr(self.s, "split_target_group", -1) >= 0 else None),
+        )
+        if dlg.exec() != QDialog.Accepted:
+            return
+        values = dlg.values()
+        if not values["sheet_path"] or not exists_file(values["sheet_path"]):
+            QMessageBox.critical(self, "Split Spritesheet", "The spritesheet file is missing or invalid.")
+            return
+        if (not values["creature"]) and (values["group"] is not None):
+            QMessageBox.critical(
+                self,
+                "Split Spritesheet",
+                "Group requires a creature. Leave both empty for flat output, or provide a creature with an optional group.",
+            )
+            return
+        if not values["output_root"]:
+            QMessageBox.critical(self, "Split Spritesheet", "Output root is required.")
+            return
+
+        self.s.split_sheet_path = values["sheet_path"]
+        self.s.split_cols = values["cols"]
+        self.s.split_rows = values["rows"]
+        self.s.split_autocrop = values["autocrop"]
+        self.s.split_target_creature = values["creature"]
+        self.s.split_target_group = int(values["group"]) if values["group"] is not None else -1
+        save_settings(self.settings_path, self.s)
+
+        cmd = [
+            sys.executable, script_path(self.s.scripts_dir, "slice_sheet.py"),
+            values["sheet_path"],
+            values["output_root"],
+            "--cols", str(values["cols"]),
+            "--rows", str(values["rows"]),
+        ]
+        if values["autocrop"]:
+            cmd += ["--auto_crop", "--crop_mode", "center"]
+        if values["creature"]:
+            cmd += ["--creature", values["creature"]]
+        if values["group"] is not None:
+            cmd += ["--group", str(values["group"])]
+        self._start_command_queue([cmd], "=== SPLIT START ===")
+
+    def _start_command_queue(self, cmds: list[list[str]], start_label: str = "=== RUN START ==="):
+        if not cmds:
+            QMessageBox.information(self, "Nothing To Run", "No commands to run.")
+            return
+        try:
+            if hasattr(self, "btn_toggle_log") and hasattr(self, "log_body") and (not self.log_body.isVisible()):
+                self.btn_toggle_log.setChecked(True)
+                if hasattr(self, "splitter"):
+                    sizes = self.splitter.sizes()
+                    total = max(1, sum(sizes))
+                    log_h = min(180, max(120, total // 4))
+                    self.splitter.setSizes([max(200, total - log_h), log_h])
+        except Exception:
+            pass
+
+        self.queue = cmds
+        self.append_log(start_label, "info")
+        for c in cmds:
+            self.append_log("> " + quote_cmd(c), "cmd")
+
+        self.btn_run.setEnabled(False)
+        self.btn_stop.setEnabled(True)
+        self._run_next()
 
     # ---------------- image viewer ----------------
-    def viewer_source_root(self) -> Path | None:
-        src = self.cb_view_source.currentText()
+    def _viewer_source_root_for_label(self, src: str) -> Path | None:
         input_root = Path(self.le_input_root.text().strip()) if is_nonempty(self.le_input_root.text()) else None
         processed_root = Path(self.le_processed_root.text().strip()) if is_nonempty(self.le_processed_root.text()) else None
         mod_assets_root = Path(self.le_mod_assets_root.text().strip()) if is_nonempty(self.le_mod_assets_root.text()) else None
@@ -3498,129 +3755,57 @@ class PipelineRunner(QWidget):
                 return parent / "forced_bg"
         return None
 
+    def viewer_source_root(self) -> Path | None:
+        return self._viewer_source_root_for_label(self.cb_view_source.currentText())
+
+    def _viewer_source_has_png(self, src: str) -> bool:
+        root = self._viewer_source_root_for_label(src)
+        creature, gid = self._scope_values()
+        if not (root and creature and gid is not None):
+            return False
+        gdir = root / creature / f"group{gid}"
+        if not gdir.exists() or not gdir.is_dir():
+            return False
+        return any(p.is_file() and p.suffix.lower() == ".png" for p in gdir.iterdir())
+
+    def _refresh_view_source_choices(self):
+        if not hasattr(self, "cb_view_source"):
+            return
+        for idx in range(self.cb_view_source.count()):
+            text = self.cb_view_source.itemText(idx)
+            font = QFont()
+            font.setBold(self._viewer_source_has_png(text))
+            self.cb_view_source.setItemData(idx, font, Qt.FontRole)
+
     def viewer_refresh_all(self, keep_selection: bool = True):
         prev_src = self.cb_view_source.currentIndex()
-        prev_cre = self.cb_view_creature.currentData()
-        prev_gid = self.cb_view_group.currentData()
         prev_frame = self.cb_view_frame.currentData()
 
         if keep_selection:
             self._capture_viewer_refresh_state()
 
         root = self.viewer_source_root()
+        creature, gid = self._scope_values()
 
-        self.cb_view_creature.blockSignals(True)
-        self.cb_view_group.blockSignals(True)
         self.cb_view_frame.blockSignals(True)
 
-        self.cb_view_creature.clear()
-        self.cb_view_group.clear()
         self.cb_view_frame.clear()
-        self.cb_view_creature.addItem("(Select)", None)
-        self.cb_view_group.addItem("(Select)", None)
         self.cb_view_frame.addItem("(Select)", None)
         self.viewer_stop_anim()
         if not keep_selection:
             self.viewer.set_image(None)
-
-        if root and root.exists() and root.is_dir():
-            creatures = sorted([p.name for p in root.iterdir() if p.is_dir() and CREATURE_ID_RE.match(p.name)])
-            for c in creatures:
-                self.cb_view_creature.addItem(c, c)
-
-        self.cb_view_creature.blockSignals(False)
-        self.cb_view_group.blockSignals(False)
         self.cb_view_frame.blockSignals(False)
 
-        if keep_selection:
-            self.cb_view_source.setCurrentIndex(prev_src)
-            if prev_cre is not None:
-                i = self.cb_view_creature.findData(prev_cre)
-                if i == -1:
-                    self.cb_view_creature.addItem(str(prev_cre), prev_cre)
-                    i = self.cb_view_creature.findData(prev_cre)
-                if i != -1:
-                    self.cb_view_creature.setCurrentIndex(i)
-                    self.viewer_refresh_groups(keep_selection=True, prev_gid=prev_gid, prev_frame=prev_frame)
-                    return
-
-        if self.cb_view_creature.count() > 1:
-            self.cb_view_creature.setCurrentIndex(1)
-            self.viewer_refresh_groups(keep_selection=False)
-
-    def viewer_refresh_groups(self, keep_selection: bool = True, prev_gid=None, prev_frame=None):
-        root = self.viewer_source_root()
-        creature = self.cb_view_creature.currentData()
-
-        if keep_selection:
-            if prev_gid is None:
-                prev_gid = self.cb_view_group.currentData()
-            if prev_frame is None:
-                prev_frame = self.cb_view_frame.currentData()
-
-        self.cb_view_group.blockSignals(True)
-        self.cb_view_frame.blockSignals(True)
-
-        self.cb_view_group.clear()
-        self.cb_view_frame.clear()
-        self.cb_view_group.addItem("(Select)", None)
-        self.cb_view_frame.addItem("(Select)", None)
-        self.viewer_stop_anim()
-        if not keep_selection:
-            self.viewer.set_image(None)
-
-        if root and creature:
-            cdir = root / creature
-            if cdir.exists():
-                gids = []
-                for p in cdir.iterdir():
-                    if p.is_dir():
-                        m = re.match(r"^group(\d+)$", p.name, re.IGNORECASE)
-                        if m:
-                            gids.append(int(m.group(1)))
-                for gid in sorted(gids):
-                    self.cb_view_group.addItem(group_label(gid), gid)
-
-        self.cb_view_group.blockSignals(False)
-        self.cb_view_frame.blockSignals(False)
-
-        if keep_selection and prev_gid is not None:
-            ig = self.cb_view_group.findData(prev_gid)
-            if ig == -1:
-                self.cb_view_group.addItem(group_label(int(prev_gid)), prev_gid)
-                ig = self.cb_view_group.findData(prev_gid)
-            if ig != -1:
-                self.cb_view_group.setCurrentIndex(ig)
-                self.viewer_refresh_frames(keep_selection=True, prev_frame=prev_frame)
-                return
-
-        if self.cb_view_group.count() > 1:
-            self.cb_view_group.setCurrentIndex(1)
-            self.viewer_refresh_frames(keep_selection=False)
-
-    def viewer_refresh_frames(self, keep_selection: bool = True, prev_frame=None):
-        root = self.viewer_source_root()
-        creature = self.cb_view_creature.currentData()
-        gid = self.cb_view_group.currentData()
-
-        if keep_selection and prev_frame is None:
-            prev_frame = self.cb_view_frame.currentData()
-
-        self.cb_view_frame.blockSignals(True)
-        self.cb_view_frame.clear()
-        self.cb_view_frame.addItem("(Select)", None)
-        self.viewer_stop_anim()
-        if not keep_selection:
-            self.viewer.set_image(None)
-
+        self.cb_view_source.setCurrentIndex(prev_src)
+        self._refresh_view_source_choices()
         if root and creature and gid is not None:
             gdir = root / creature / f"group{gid}"
             if gdir.exists():
                 frames = sorted([p.name for p in gdir.iterdir() if p.is_file() and p.suffix.lower() == ".png"])
+                self.cb_view_frame.blockSignals(True)
                 for f in frames:
                     self.cb_view_frame.addItem(f, f)
-
-        self.cb_view_frame.blockSignals(False)
+                self.cb_view_frame.blockSignals(False)
 
         if keep_selection and prev_frame is not None:
             jf = self.cb_view_frame.findData(prev_frame)
@@ -3639,8 +3824,7 @@ class PipelineRunner(QWidget):
 
     def viewer_selected_path(self) -> Path | None:
         root = self.viewer_source_root()
-        creature = self.cb_view_creature.currentData()
-        gid = self.cb_view_group.currentData()
+        creature, gid = self._scope_values()
         frame = self.cb_view_frame.currentData()
         if not (root and creature and gid is not None and frame):
             return None
@@ -3662,8 +3846,7 @@ class PipelineRunner(QWidget):
         if not root:
             return
 
-        creature = self.cb_view_creature.currentData()
-        gid = self.cb_view_group.currentData()
+        creature, gid = self._scope_values()
 
         # If no structured selection is available (e.g. quick split outputs),
         # open the source root itself (or creature folder if set).
@@ -3870,21 +4053,9 @@ class PipelineRunner(QWidget):
             QMessageBox.critical(self, "Error", "Scope creature_id is invalid. Example: goblin_darter")
             return False
 
-        if self.chk_split.isChecked():
-            if not self.le_sheet.text().strip() or not exists_file(self.le_sheet.text().strip()):
-                QMessageBox.critical(self, "Error", "Split is enabled but the spritesheet file is missing.")
-                return False
-            if (creature and group is None) or ((not creature) and (group is not None)):
-                QMessageBox.critical(
-                    self, "Error",
-                    "Split uses Scope.\n\n"
-                    "Provide BOTH Scope creature + group for structured output, OR leave BOTH empty for flat output."
-                )
-                return False
-
         if self.chk_adjust_input.isChecked():
             Path(self.s.input_root).mkdir(parents=True, exist_ok=True)
-            if not self.chk_split.isChecked() and not self._require_scope_content(self.s.input_root, "Adjust Input"):
+            if not self._require_scope_content(self.s.input_root, "Adjust Input"):
                 return False
 
         if self.chk_process.isChecked():
@@ -3918,6 +4089,13 @@ class PipelineRunner(QWidget):
             selected_scales = self._selected_process_scales()
             if not selected_scales:
                 QMessageBox.critical(self, "Error", "Adjust Output requires at least one selected process resolution.")
+                return False
+            if self.chk_process.isChecked() and not self.chk_reframe.isChecked():
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    "Adjust Output requires Reframe to be enabled in Process Frames, because it reads from processed output canvases.",
+                )
                 return False
             if not self.chk_process.isChecked():
                 found_any = False
@@ -3959,20 +4137,6 @@ class PipelineRunner(QWidget):
         s = self.s
         cmds: list[list[str]] = []
         creature, group = self._scope_values()
-
-        if self.chk_split.isChecked():
-            cmd = [
-                sys.executable, script_path(s.scripts_dir, "slice_sheet.py"),
-                self.le_sheet.text().strip(),
-                s.input_root,
-                "--cols", str(s.split_cols),
-                "--rows", str(s.split_rows),
-            ]
-            if s.split_autocrop:
-                cmd += ["--auto_crop", "--crop_mode", "center"]
-            if creature and group is not None:
-                cmd += ["--creature", creature, "--group", str(group)]
-            cmds.append(cmd)
 
         if self.chk_adjust_input.isChecked():
             self._append_adjust_command(cmds, s.input_root, "input")
@@ -4052,45 +4216,12 @@ class PipelineRunner(QWidget):
             if toggle is not None and toggle.isChecked():
                 toggle.setChecked(False)
 
-        # Confirm risky operation: splitting without scope produces unstructured output
-        if self.chk_split.isChecked() and not self.le_only_creature.currentText().strip():
-            r = QMessageBox.question(
-                self,
-                "Split without scope?",
-                "You are about to run 'Split Spritesheet' without a creature scope.\n\nThis typically generates frames without the standard <creature_id>/groupN structure, which can be harder to browse and deploy.\n\nDo you want to continue?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
-            )
-            if r != QMessageBox.Yes:
-                return
-
-        # If log is collapsed, expand it so output is visible during RUN.
-        try:
-            if hasattr(self, "btn_toggle_log") and hasattr(self, "log_body") and (not self.log_body.isVisible()):
-                self.btn_toggle_log.setChecked(True)
-                # Give log a reasonable height
-                if hasattr(self, "splitter"):
-                    sizes = self.splitter.sizes()
-                    total = max(1, sum(sizes))
-                    log_h = min(180, max(120, total // 4))
-                    self.splitter.setSizes([max(200, total - log_h), log_h])
-        except Exception:
-            pass
-
         self.on_save()
         cmds = self.build_commands()
         if not cmds:
             QMessageBox.information(self, "Nothing To Run", "No pipeline steps selected.")
             return
-
-        self.queue = cmds
-        self.append_log("=== RUN START ===", "info")
-        for c in cmds:
-            self.append_log("> " + quote_cmd(c), "cmd")
-
-        self.btn_run.setEnabled(False)
-        self.btn_stop.setEnabled(True)
-        self._run_next()
+        self._start_command_queue(cmds, "=== RUN START ===")
 
     def _run_next(self):
         if not self.queue:

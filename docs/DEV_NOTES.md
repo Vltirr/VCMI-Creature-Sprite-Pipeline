@@ -57,8 +57,7 @@ Recent UI decisions worth preserving:
 
 4) Scope and selection UX:
 - current status:
-  - `Scope` now explains its dual meaning in the GUI
-  - `Use Viewer Selection` copies the current viewer creature/group into scope explicitly
+  - `Scope` is now the single creature/group selector for both pipeline filtering and viewer browsing
   - the scope creature control is now an editable combo box populated from `inputs`
   - `Save Profile` stores both Process Frames and Image Adjustments at the active scope level
 - later option to evaluate:
@@ -73,6 +72,43 @@ Recent UI decisions worth preserving:
     - copy input adjustments to output
     - copy output adjustments to input
     - swap both adjustment sets
+
+6) Background cleanup quality:
+- evaluate adding an optional `edge color bleed` pass as a final step of `Remove Background`
+- intended goal:
+  - reduce halos and fringe artifacts after alpha cleanup
+  - improve reframed outputs and later scaling/deploy quality
+- likely placement:
+  - after chroma/key cleanup
+  - before reframe/composition
+
+7) Protect canonical input/output roots from image-adjustment writes:
+- current concern:
+  - `Adjust Input` and `Adjust Output` can overwrite the same roots later stages depend on
+  - this makes it harder to reason about source-of-truth imagery and to retry later steps safely
+- future direction:
+  - keep `inputs/` as immutable source frames
+  - add a dedicated post-input-adjustment root so input previews and later steps do not modify canonical inputs
+  - add a dedicated pre-output-adjustment root so `process_frames` output exists separately from the final adjusted output root
+  - make preview behavior explicit:
+    - input preview should operate from the canonical input-side source chosen by the final design
+    - output preview should always operate from the pre-output-adjustment process result
+  - deploy should prefer the final adjusted output root, or fall back to the raw process output root if no adjusted output exists
+- naming of these new roots should be decided carefully before implementation to avoid another round of confusing folder semantics
+
+8) Refactor `app.py` into smaller modules:
+- `app.py` now contains too much UI, viewer, dialog, settings, and pipeline orchestration logic in one file
+- risks of keeping it monolithic:
+  - harder to understand and modify safely
+  - localized changes have broader regression risk
+  - merge conflicts become more likely when multiple branches touch unrelated UI areas
+- preferred future split:
+  - main window shell / layout wiring
+  - viewer logic
+  - preview window
+  - split dialog
+  - settings/profile persistence helpers
+  - pipeline command building / orchestration
 
 6) Open-folder shortcuts:
 - current status:

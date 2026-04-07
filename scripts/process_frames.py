@@ -8,6 +8,7 @@ from collections import Counter, deque
 from pathlib import Path
 from PIL import Image, ImageFilter, ImageDraw
 
+CREATURE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
 # ------------------ utils ------------------
 
@@ -347,7 +348,6 @@ def draw_preview(canvas: Image.Image, hex_overlay: Image.Image | None, baseline_
 
 # ------------------ scanning input tree ------------------
 
-CREATURE_RE = re.compile(r"^domC\d{2}$", re.IGNORECASE)
 GROUP_RE = re.compile(r"^group[\s_\-]?(\d+)$", re.IGNORECASE)
 
 # Expand this list if needed, according to the docs
@@ -388,7 +388,7 @@ def scan_tree(in_root: Path):
 def main():
     ap = argparse.ArgumentParser()
 
-    ap.add_argument("--in_root", required=True, help="Root folder containing domCxx/groupN")
+    ap.add_argument("--in_root", required=True, help="Root folder containing creature_id/groupN")
     ap.add_argument("--out_root", required=True, help="Output root in the same creature/group structure")
 
     ap.add_argument("--clean_root", default="", help="Optional: save the intermediate remove-bg result")
@@ -403,7 +403,7 @@ def main():
     ap.add_argument("--overlay_alpha", type=int, default=200)
 
     # Filters
-    ap.add_argument("--only_creature", default="", help="Example: domC03")
+    ap.add_argument("--only_creature", default="", help="Optional creature_id filter")
     ap.add_argument("--only_group", type=int, default=-1, help="Example: 2")
 
     # keying
@@ -562,14 +562,7 @@ def main():
                 if cdir:
                     current.save(cdir / frame_path.name)
             elif args.reframe:
-                if not cdir:
-                    raise SystemExit("--reframe without --remove-bg requires --clean_root so cleaned alpha frames can be reused")
-                cleaned_frame = cdir / frame_path.name
-                if not cleaned_frame.exists():
-                    raise SystemExit(
-                        f"Missing cleaned alpha frame required for --reframe: {cleaned_frame}"
-                    )
-                current = Image.open(cleaned_frame).convert("RGBA")
+                current = Image.open(frame_path).convert("RGBA")
                 force_preview_source = current
 
             if fdir:

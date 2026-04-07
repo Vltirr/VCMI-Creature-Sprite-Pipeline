@@ -29,13 +29,15 @@ The GUI viewer assumes this convention for browsing.
 
 ## Steps
 
-### 1) Split spritesheet (optional)
+### Split spritesheet (optional import tool)
 `scripts/slice_sheet.py` cuts a grid spritesheet into frames.
 
-- Pipeline mode (recommended): writes into `out_root/creature_id/groupN/`
+- Structured mode: with `--creature <creature_id>` and `--group N`, writes into `out_root/creature_id/groupN/`
+- Creature-only mode: with `--creature <creature_id>` only, writes into `out_root/creature_id/`
 - Quick mode: if no `--creature/--group` are provided, writes directly into `out_root/`
+- In the GUI this is opened from `Split Spritesheet...` and is no longer part of the main pipeline step checklist
 
-### 2) Adjust input (optional)
+### 1) Adjust input (optional)
 `scripts/adjust_frames.py` can run on `inputs` before `scripts/process_frames.py`.
 
 - Reads `inputs/<creature_id>/groupN/*.png`
@@ -43,7 +45,7 @@ The GUI viewer assumes this convention for browsing.
 - In the GUI, `Adjust Input` is an independent step and does not require `Process Frames`
 - The GUI offers live preview in a dedicated preview editor window using the currently selected viewer frame before writing files
 
-### 3) Process frames
+### 2) Process frames
 `scripts/process_frames.py` reads frames and outputs aligned sprites for one requested target canvas.
 
 Key operations:
@@ -68,7 +70,7 @@ GUI-facing process operations:
 - when `Reframe` runs without `Remove Background` in the same execution, the GUI reuses the matching frames from `cleaned_alpha/...` as the process input
 - `Force Background` writes the helper output under `forced_bg/...` without replacing the main processed output
 
-### 4) Adjust output (optional)
+### 3) Adjust output (optional)
 `scripts/adjust_frames.py` can also run on `outputs` after `scripts/process_frames.py`.
 
 - Reads `outputs/<scale>x/<creature_id>/groupN/*.png`
@@ -77,7 +79,7 @@ GUI-facing process operations:
 - In the GUI, `Adjust Output` currently runs across all selected processed resolutions
 - The GUI offers live preview in a dedicated preview editor window using the currently selected viewer frame before writing files
 
-### 5) Build animation JSON
+### 4) Build animation JSON
 `scripts/build_anim_json.py` scans `outputs/1x/creature_id/groupN/*.png` and writes `anim_json_root/<creature_id>.json`.
 
 Important:
@@ -85,7 +87,7 @@ Important:
 - each generated sequence currently includes `"generateShadow": 1`
 - missing groups can be represented via fallbacks if configured in the script
 
-### 6) Deploy
+### 5) Deploy
 `scripts/deploy_assets.py` copies PNGs into the mod assets root and merges JSON incrementally.
 
 Important:
@@ -96,14 +98,14 @@ Important:
 ## GUI notes
 
 The pipeline step order in the GUI is:
-1. Split Spritesheet
-2. Adjust Input
-3. Process Frames
-4. Adjust Output
-5. Build Json
-6. Deploy
+1. Adjust Input
+2. Process Frames
+3. Adjust Output
+4. Build Json
+5. Deploy
 
 The main configuration area below the pipeline includes:
+- `Scope`
 - `Process Frames Options`
 - `Image Adjustments`
 
@@ -133,6 +135,9 @@ Each stage includes:
 
 ### Viewer behavior
 
+- the selected scope determines which creature/group the viewer browses
 - the viewer can browse `Inputs`, `Outputs`, `Cleaned Alpha`, `Previews`, `Forced Background`, and `Deployed` assets
 - for `Outputs`, `Previews`, and `Deployed`, the GUI includes a resolution selector (`1x`, `2x`, `3x`, `4x`)
 - `Cleaned Alpha` and `Forced Background` remain shared across resolutions because they are not resolution-specific outputs
+- the viewer remembers its selected `Source` and `Resolution`
+- `Source` entries are shown in bold when that source has PNGs for the current scope
