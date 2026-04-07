@@ -22,14 +22,14 @@ A PySide6 GUI that orchestrates a Heroes III / VCMI creature sprite pipeline:
 2. Run the app:
    - `py app.py`
 3. Set your paths (Scripts/Inputs/Outputs/Anim JSON/Mod roots) and click **Save**.
-4. Select a creature scope (`creature_id`) and optionally a group.
-5. Tick the steps you want and press **RUN**.
+4. Use **Split Spritesheet...** if you want to import a new sheet into `inputs`.
+5. Select a creature scope (`creature_id`) and optionally a group.
+6. Tick the steps you want and press **RUN**.
 
 Scope helpers in the GUI:
 - the creature field is an editable combo box populated from `inputs/`
-- `Use Viewer Selection` copies the current viewer creature/group into scope
+- the selected scope drives both pipeline filtering and the creature/group shown in the viewer
 - `Save Profile` stores both `Process Frames` and `Image Adjustments` at the current scope level
-- the scope hint explains that `Split Spritesheet` uses scope both as a filter and as the destination creature/group identity
 
 Profile storage:
 - global defaults live in `settings.json`
@@ -40,7 +40,7 @@ The main configuration area includes:
 - `Process Frames Options` for frame cleanup, reframing, helper outputs, and multi-resolution generation
 - `Image Adjustments` with separate `Input stage` and `Output stage` controls
 
-The `Process Frames Defaults` panel now includes operation toggles and output resolution selection:
+The `Process Frames Options` panel includes operation toggles and output resolution selection:
 - `Remove Background`
 - `Reframe`
 - `Force Background` helper output
@@ -62,6 +62,8 @@ The `Image Adjustments` panel supports:
 - a `Single` / `Compare` mode toggle inside the preview editor
 - the preview editor opens in `Single` mode by default
 - sliders in the preview editor centered at `0` for neutral GUI values
+- the viewer remembers its selected `Source` and `Resolution` between app launches
+- viewer `Source` entries are shown in bold when that source has PNGs for the current scope
 
 ## Quick start (CLI)
 

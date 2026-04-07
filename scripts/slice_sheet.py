@@ -1,9 +1,10 @@
-# slice_sheet.py
 from __future__ import annotations
 from pathlib import Path
 from PIL import Image
 import argparse
 import re
+
+CREATURE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
 
 def auto_crop_to_divisible(img: Image.Image, cols: int, rows: int, mode: str = "center") -> Image.Image:
@@ -58,7 +59,7 @@ def main():
     p.add_argument("out_root", help="output root directory")
 
     # Pipeline mode (optional)
-    p.add_argument("--creature", default="", help="ej: domC03 (opcional)")
+    p.add_argument("--creature", default="", help="creature_id (optional)")
     p.add_argument("--group", type=int, default=-1, help="animation group (optional)")
 
     p.add_argument("--cols", type=int, required=True)
@@ -80,15 +81,18 @@ def main():
     # Decide output folder
     out_root = Path(args.out_root)
 
-    if (args.creature and args.group == -1) or (not args.creature and args.group != -1):
-        raise SystemExit("If you use --creature you must also use --group (and vice versa).")
+    if (not args.creature and args.group != -1):
+        raise SystemExit("If you use --group you must also use --creature.")
 
     if args.creature:
-        creature_re = re.compile(r"^domC\d{2}$", re.IGNORECASE)
-        if not creature_re.match(args.creature):
-            raise SystemExit(f"Invalid creature: {args.creature} (expected domC01..domC14)")
-        out_dir = out_root / args.creature / f"group{args.group}"
-        mode = f"{args.creature} group{args.group}"
+        if not CREATURE_ID_RE.match(args.creature):
+            raise SystemExit(f"Invalid creature_id: {args.creature}")
+        if args.group != -1:
+            out_dir = out_root / args.creature / f"group{args.group}"
+            mode = f"{args.creature} group{args.group}"
+        else:
+            out_dir = out_root / args.creature
+            mode = f"{args.creature} (flat)"
     else:
         out_dir = out_root
         mode = "flat"
