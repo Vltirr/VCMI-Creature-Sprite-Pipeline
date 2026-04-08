@@ -74,13 +74,11 @@ Recent UI decisions worth preserving:
     - swap both adjustment sets
 
 6) Background cleanup quality:
-- evaluate adding an optional `edge color bleed` pass as a final step of `Remove Background`
-- intended goal:
-  - reduce halos and fringe artifacts after alpha cleanup
-  - improve reframed outputs and later scaling/deploy quality
-- likely placement:
-  - after chroma/key cleanup
-  - before reframe/composition
+- current status:
+  - `Remove Background` now includes an optional `edge color bleed` pass controlled by radius (`0 = off`)
+  - it runs after chroma cleanup / despill / shrink and before reframe
+- likely future refinement:
+  - keep tuning aggressiveness and neighborhood selection based on real sprite cases
 
 7) Protect canonical input/output roots from image-adjustment writes:
 - current concern:

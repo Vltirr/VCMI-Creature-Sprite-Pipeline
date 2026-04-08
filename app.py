@@ -130,6 +130,7 @@ class AppSettings:
     tol: int = 40
     feather: int = 65
     shrink: int = 1
+    edge_bleed_radius: int = 0
     despill: bool = True
     key_from: str = "each"
     bg_mode: str = "global"
@@ -327,6 +328,7 @@ def _settings_process_profile_dict(settings: AppSettings) -> dict:
         "tol": settings.tol,
         "feather": settings.feather,
         "shrink": settings.shrink,
+        "edge_bleed_radius": settings.edge_bleed_radius,
         "despill": settings.despill,
         "key_from": settings.key_from,
         "bg_mode": settings.bg_mode,
@@ -1633,6 +1635,7 @@ class PipelineRunner(QWidget):
         self.sp_tol = QSpinBox(); self.sp_tol.setRange(0, 255)
         self.sp_feather = QSpinBox(); self.sp_feather.setRange(0, 255)
         self.sp_shrink = QSpinBox(); self.sp_shrink.setRange(0, 10)
+        self.sp_edge_bleed_radius = QSpinBox(); self.sp_edge_bleed_radius.setRange(0, 8)
 
         self.chk_remove_bg = QCheckBox("Remove Background")
         self.chk_remove_bg.setChecked(True)
@@ -1677,8 +1680,9 @@ class PipelineRunner(QWidget):
         add_param_at(2, 0, "Feather", self.sp_feather)
         add_param_at(3, 0, "Bg Mode", self.cb_bg_mode)
         add_param_at(4, 0, "Shrink", self.sp_shrink)
-        add_param_at(5, 0, "Key From", self.cb_key_from)
-        pr.addWidget(self.chk_despill, 6, 0, 1, 2, alignment=Qt.AlignLeft)
+        add_param_at(5, 0, "Edge Bleed", self.sp_edge_bleed_radius)
+        add_param_at(6, 0, "Key From", self.cb_key_from)
+        pr.addWidget(self.chk_despill, 7, 0, 1, 2, alignment=Qt.AlignLeft)
 
         add_param_at(1, 2, "Baseline Y", self.sp_baseline_y)
         add_param_at(2, 2, "Left Limit X", self.sp_left_limit_x)
@@ -2561,6 +2565,7 @@ class PipelineRunner(QWidget):
             self.sp_feather.setEnabled(bg_enabled)
             self.cb_bg_mode.setEnabled(bg_enabled)
             self.sp_shrink.setEnabled(bg_enabled)
+            self.sp_edge_bleed_radius.setEnabled(bg_enabled)
             self.cb_key_from.setEnabled(bg_enabled)
             self.chk_despill.setEnabled(bg_enabled)
 
@@ -2752,6 +2757,7 @@ class PipelineRunner(QWidget):
                 "--tol", str(s.tol),
                 "--feather", str(s.feather),
                 "--shrink", str(s.shrink),
+                "--edge-bleed-radius", str(getattr(s, "edge_bleed_radius", 0)),
             ]
             cmd += ["--remove-bg"]
         if reframe:
@@ -3035,6 +3041,7 @@ class PipelineRunner(QWidget):
         self.sp_tol.setValue(s.tol)
         self.sp_feather.setValue(s.feather)
         self.sp_shrink.setValue(s.shrink)
+        self.sp_edge_bleed_radius.setValue(getattr(s, "edge_bleed_radius", 0))
         self.chk_despill.setChecked(bool(s.despill))
         self.cb_key_from.setCurrentText(s.key_from if s.key_from in ["each", "first"] else "each")
         self.cb_bg_mode.setCurrentText(s.bg_mode if s.bg_mode in ["global", "border"] else "global")
@@ -3096,6 +3103,7 @@ class PipelineRunner(QWidget):
         s.tol = self.sp_tol.value()
         s.feather = self.sp_feather.value()
         s.shrink = self.sp_shrink.value()
+        s.edge_bleed_radius = self.sp_edge_bleed_radius.value()
         s.despill = self.chk_despill.isChecked()
         s.key_from = self.cb_key_from.currentText()
         s.bg_mode = self.cb_bg_mode.currentText()
@@ -3416,6 +3424,7 @@ class PipelineRunner(QWidget):
             "tol": self.sp_tol.value(),
             "feather": self.sp_feather.value(),
             "shrink": self.sp_shrink.value(),
+            "edge_bleed_radius": self.sp_edge_bleed_radius.value(),
             "despill": self.chk_despill.isChecked(),
             "key_from": self.cb_key_from.currentText(),
             "bg_mode": self.cb_bg_mode.currentText(),
@@ -3441,6 +3450,7 @@ class PipelineRunner(QWidget):
         self.sp_tol.setValue(int(data.get("tol", self.sp_tol.value())))
         self.sp_feather.setValue(int(data.get("feather", self.sp_feather.value())))
         self.sp_shrink.setValue(int(data.get("shrink", self.sp_shrink.value())))
+        self.sp_edge_bleed_radius.setValue(int(data.get("edge_bleed_radius", self.sp_edge_bleed_radius.value())))
         self.chk_despill.setChecked(bool(data.get("despill", self.chk_despill.isChecked())))
         key_from = str(data.get("key_from", self.cb_key_from.currentText()))
         if key_from in ["each", "first"]:

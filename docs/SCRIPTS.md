@@ -84,16 +84,20 @@ Important:
 
 Relevant parameters:
 - Target canvas / placement: `--canvas_w`, `--canvas_h`, `--baseline_y`, `--left_limit_x`, `--left_padding`, `--sprite_h`, `--sprite_w`, `--prefer`
-- Background removal: `--key_from`, `--bg_mode`, `--tol`, `--feather`, `--feather_px`, `--shrink`, `--despill`
+- Background removal: `--key_from`, `--bg_mode`, `--tol`, `--feather`, `--feather_px`, `--shrink`, `--edge-bleed-radius`, `--despill`
 - Forced background: `--force-bg-color`
 - Optional auxiliary outputs: `--clean_root`, `--forced_root`, `--preview_root`, `--hex_overlay`, `--overlay_alpha`
+
+Notes:
+- `--edge-bleed-radius 0` disables edge color bleed.
+- When greater than `0`, edge color bleed runs after `shrink` and before any `reframe`.
 
 Example:
 ```bash
 py scripts/process_frames.py ^
   --in_root inputs ^
   --out_root outputs/1x ^
-  --creature goblin_darter ^
+  --only_creature goblin_darter ^
   --remove-bg --reframe ^
   --canvas_w 450 ^
   --canvas_h 400 ^
@@ -101,6 +105,7 @@ py scripts/process_frames.py ^
   --sprite_h 110 ^
   --tol 18 ^
   --feather 20 ^
+  --edge-bleed-radius 2 ^
   --bg_mode border ^
   --despill
 ```
