@@ -206,6 +206,83 @@ def alpha_shrink(img: Image.Image, pixels: int = 1) -> Image.Image:
     return Image.merge("RGBA", (r, g, b, a))
 
 
+def edge_color_bleed(
+    img: Image.Image,
+    radius: int = 2,
+    *,
+    edge_alpha_min: int = 1,
+    edge_alpha_max: int = 254,
+    inner_alpha_min: int = 220,
+) -> Image.Image:
+    radius = max(0, int(radius))
+    if radius <= 0:
+        return img
+
+    src = img.convert("RGBA")
+    dst = src.copy()
+    src_px = src.load()
+    dst_px = dst.load()
+    w, h = src.size
+
+    def has_transparent_neighbor(x: int, y: int) -> bool:
+        for dy in (-1, 0, 1):
+            ny = y + dy
+            if ny < 0 or ny >= h:
+                continue
+            for dx in (-1, 0, 1):
+                nx = x + dx
+                if nx < 0 or nx >= w or (dx == 0 and dy == 0):
+                    continue
+                if src_px[nx, ny][3] == 0:
+                    return True
+        return False
+
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = src_px[x, y]
+            is_semitransparent_edge = edge_alpha_min <= a <= edge_alpha_max
+            is_opaque_outer_edge = a >= inner_alpha_min and has_transparent_neighbor(x, y)
+            if not (is_semitransparent_edge or is_opaque_outer_edge):
+                continue
+
+            strict_sum_r = 0
+            strict_sum_g = 0
+            strict_sum_b = 0
+            strict_samples = 0
+
+            loose_sum_r = 0
+            loose_sum_g = 0
+            loose_sum_b = 0
+            loose_samples = 0
+
+            for dy in range(-radius, radius + 1):
+                ny = y + dy
+                if ny < 0 or ny >= h:
+                    continue
+                for dx in range(-radius, radius + 1):
+                    nx = x + dx
+                    if nx < 0 or nx >= w or (dx == 0 and dy == 0):
+                        continue
+                    nr, ng, nb, na = src_px[nx, ny]
+                    if na >= inner_alpha_min:
+                        loose_sum_r += nr
+                        loose_sum_g += ng
+                        loose_sum_b += nb
+                        loose_samples += 1
+                        if not has_transparent_neighbor(nx, ny):
+                            strict_sum_r += nr
+                            strict_sum_g += ng
+                            strict_sum_b += nb
+                            strict_samples += 1
+
+            if strict_samples > 0:
+                dst_px[x, y] = (strict_sum_r // strict_samples, strict_sum_g // strict_samples, strict_sum_b // strict_samples, a)
+            elif loose_samples > 0:
+                dst_px[x, y] = (loose_sum_r // loose_samples, loose_sum_g // loose_samples, loose_sum_b // loose_samples, a)
+
+    return dst
+
+
 def trim_to_alpha(img: Image.Image, margin: int = 0) -> Image.Image:
     img = img.convert("RGBA")
     a = img.split()[3]
@@ -420,6 +497,7 @@ def main():
 
     ap.add_argument("--despill", action="store_true")
     ap.add_argument("--shrink", type=int, default=1)
+    ap.add_argument("--edge-bleed-radius", type=int, default=0)
     ap.add_argument("--trim_margin", type=int, default=2)
 
     # placement + sizing
@@ -557,6 +635,7 @@ def main():
                 if args.despill:
                     current = despill_magenta(current, strength=0.6)
                 current = alpha_shrink(current, pixels=max(0, args.shrink))
+                current = edge_color_bleed(current, radius=max(0, args.edge_bleed_radius))
                 force_preview_source = current
 
                 if cdir:

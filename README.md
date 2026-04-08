@@ -45,6 +45,7 @@ The `Process Frames Options` panel includes operation toggles and output resolut
 - `Reframe`
 - `Force Background` helper output
 - `1x`, `2x`, `3x`, `4x`
+- `Edge Bleed` as an optional final cleanup radius inside `Remove Background` (`0 = off`)
 - processed outputs are written under `outputs/<scale>x/<creature_id>/groupN/*.png`
 - `cleaned_alpha/` and `forced_bg/` are shared helper outputs
 - when `Reframe` runs without `Remove Background`, the GUI reuses the matching frames from `cleaned_alpha/`
@@ -95,7 +96,7 @@ See `docs/SCRIPTS.md` for full parameters. Typical pipeline:
 
 - JSON frames should include `groupN/`, e.g. `group3/frame_012.png`.
 - Deployed JSON sequences now include `generateShadow: 1`.
-- If you see halos after chroma key, tweak `--tol`, `--feather`, and `--shrink`, and try `--despill`.
+- If you see halos after chroma key, tweak `--tol`, `--feather`, `--shrink`, try `--despill`, and raise `Edge Bleed` from `0` gradually.
 - If alignment feels off, adjust `baseline_y`, `left_limit_x`, and `left_padding`.
 - If `Adjust Input` or `Adjust Output` finds no PNGs for the selected scope, the GUI aborts that step and shows a warning popup.
 - Preview window changes are temporary until you apply them to `Input` or `Output`, and files are still only written when you run the corresponding pipeline step.

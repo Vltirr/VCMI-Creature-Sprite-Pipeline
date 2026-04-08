@@ -49,7 +49,7 @@ The GUI viewer assumes this convention for browsing.
 `scripts/process_frames.py` reads frames and outputs aligned sprites for one requested target canvas.
 
 Key operations:
-- chroma key removal (`tol`, `feather`, `shrink`, `bg_mode`, `key_from`, `despill`)
+- chroma key removal (`tol`, `feather`, `shrink`, `bg_mode`, `key_from`, `despill`, optional `edge bleed`)
 - scaling (keeps aspect ratio by default; optional small distortion via `prefer=none`)
 - alignment/anchoring into the requested canvas using baseline/left-limit parameters
 - optional preview overlay alpha (`overlay_alpha`) for the preview PNGs
@@ -66,6 +66,7 @@ Auxiliary outputs:
 
 GUI-facing process operations:
 - `Remove Background` runs chroma/key cleanup and can emit `cleaned_alpha/...`
+- `Edge Bleed` is an optional final cleanup pass inside `Remove Background`; it recolors contaminated edge pixels using nearby interior sprite color while preserving alpha
 - `Reframe` resizes, aligns, and writes main processed outputs under `outputs/<scale>x/...`
 - when `Reframe` runs without `Remove Background` in the same execution, the GUI reuses the matching frames from `cleaned_alpha/...` as the process input
 - `Force Background` writes the helper output under `forced_bg/...` without replacing the main processed output
