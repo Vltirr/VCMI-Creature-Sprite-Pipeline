@@ -2,7 +2,7 @@
 
 ## Current architecture
 
-- `app.py` runs a PySide6 GUI that orchestrates the pipeline.
+- `vcmi_creature_sprite_pipeline.py` runs a PySide6 GUI that orchestrates the pipeline.
 - Scripts are still usable standalone (CLI) and are called by the GUI.
 
 ## Recommended future refactor (roadmap)
@@ -85,7 +85,7 @@ Recent UI decisions worth preserving:
   - `Adjust Input` and `Adjust Output` can overwrite the same roots later stages depend on
   - this makes it harder to reason about source-of-truth imagery and to retry later steps safely
 - future direction:
-  - keep `inputs/` as immutable source frames
+  - keep `workspace/inputs/` as immutable source frames
   - add a dedicated post-input-adjustment root so input previews and later steps do not modify canonical inputs
   - add a dedicated pre-output-adjustment root so `process_frames` output exists separately from the final adjusted output root
   - make preview behavior explicit:
@@ -94,8 +94,8 @@ Recent UI decisions worth preserving:
   - deploy should prefer the final adjusted output root, or fall back to the raw process output root if no adjusted output exists
 - naming of these new roots should be decided carefully before implementation to avoid another round of confusing folder semantics
 
-8) Refactor `app.py` into smaller modules:
-- `app.py` now contains too much UI, viewer, dialog, settings, and pipeline orchestration logic in one file
+8) Continue splitting the GUI main window into smaller modules:
+- `ui/main_window.py` still contains too much UI layout and pipeline orchestration logic in one file
 - risks of keeping it monolithic:
   - harder to understand and modify safely
   - localized changes have broader regression risk
@@ -118,15 +118,15 @@ Recent UI decisions worth preserving:
 - current status:
   - global defaults are stored in `settings.json`
   - current working values are also persisted in `settings.json`
-  - creature profiles are stored in `inputs/<creature_id>/_pipeline_profile.json`
-  - group profiles are stored in `inputs/<creature_id>/groupN/_pipeline_profile.json`
+  - creature profiles are stored in `workspace/inputs/<creature_id>/_pipeline_profile.json`
+  - group profiles are stored in `workspace/inputs/<creature_id>/groupN/_pipeline_profile.json`
   - loading is explicit; changing scope does not auto-load profiles
 
 ## Documentation conventions
 
 - `docs/SCRIPTS.md` should stay focused on standalone CLI usage only.
 - `docs/PIPELINE.md` should describe the pipeline flow, folder conventions, and GUI behavior.
-- Internal helper modules such as `image_adjustments.py` do not need standalone user-facing docs unless they become public entry points.
+- Internal helper modules such as `core/image_adjustments.py` do not need standalone user-facing docs unless they become public entry points.
 
 ## Next pipeline evolution
 
@@ -139,9 +139,9 @@ Goal:
 
 Current implementation status:
 - the GUI can already generate `1x`, `2x`, `3x`, and `4x` processed outputs by orchestrating repeated calls to `scripts/process_frames.py`
-- processed outputs are stored under `outputs/<scale>x/...`
-- previews are stored under `previews/<scale>x/...`
-- cleaned and forced helper outputs are intentionally shared across resolutions as `cleaned_alpha/...` and `forced_bg/...`
+- processed outputs are stored under `workspace/outputs/<scale>x/...`
+- previews are stored under `workspace/previews/<scale>x/...`
+- cleaned and forced helper outputs are intentionally shared across resolutions as `workspace/cleaned_alpha/...` and `workspace/forced_bg/...`
 - JSON build and deploy currently treat `1x` as the primary source, while deploy can also copy `2x/3x/4x` assets into `sprites2x/3x/4x`
 
 ### 2) Independently runnable process stages
@@ -192,12 +192,35 @@ Design direction:
 
 ### Suggested implementation order
 
-1. Define the multi-resolution workflow and folder model first.
-2. Refactor process stages so they can run independently.
-3. Add hierarchical settings once the real processing model is clear.
+1. Stop saving/loading the three main `Process Frames` operation flags in global, creature, and group profiles.
+- The selected operations are circumstantial run choices, not durable process settings.
+- Profiles should keep durable processing parameters such as cleanup, placement, helper output, and resolution settings.
+
+2. Add scoped cleanup actions for generated content.
+- Cleanup should support the current scope level: creature, creature/group, and ideally a specific frame.
+- Avoid global destructive cleanup as the default interaction.
+- Evaluate placing these actions near the viewer, since the viewer already expresses what the user is looking at.
+
+3. Protect canonical input and output roots from image-adjustment writes.
+- Keep following the current modular direction: command construction in `core/process_commands.py`, path/profile helpers in `core/`, and UI decisions in `ui/`.
+- Add explicit intermediate roots for adjusted input and raw processed output before changing behavior broadly.
+- Keep preview behavior explicit so users can understand which version they are seeing and editing.
+
+4. Improve difficult background-removal cases.
+- Investigate whether floor shadows and low-contrast ground remnants need an edge-bleed improvement, a mask cleanup option, or a separate shadow/floor suppression pass.
+- Prefer small optional controls over making the default chroma cleanup more destructive.
+
+5. Continue evolving `process_frames.py`.
+- Split reusable internals such as frame discovery, background removal, edge bleed, reframing, forced background generation, and preview generation.
+- Keep CLI compatibility while making the implementation easier to test and reuse.
+
+6. Continue splitting `ui/main_window.py`.
+- Candidate next splits: path panel, process options panel, image-adjustment panel, and run-queue controller.
+- Keep each split behavior-neutral and documented.
 
 ### Risks to keep in mind
 
 - mixing multiple resolutions in the same roots without a strong convention will make viewer, deploy, and JSON generation harder to reason about
 - exposing independently runnable stages in the GUI will need careful UX so the active combination of operations stays understandable
+
 

@@ -25,7 +25,7 @@ Common parameters:
 
 Example:
 ```bash
-py scripts/slice_sheet.py --in_sheet sheet.png --cols 5 --rows 5 --out_root inputs --creature goblin_darter --group 0
+py scripts/slice_sheet.py --in_sheet sheet.png --cols 5 --rows 5 --out_root workspace/inputs --creature goblin_darter --group 0
 ```
 
 ## 2) `scripts/adjust_frames.py`
@@ -56,8 +56,8 @@ Behavior:
 
 Examples:
 ```bash
-py scripts/adjust_frames.py --in_root inputs --out_root inputs --creature goblin_darter --brightness 110 --contrast 105
-py scripts/adjust_frames.py --in_root outputs/1x --out_root outputs/1x --creature goblin_darter --group 2 --sharpness 120 --gamma 95
+py scripts/adjust_frames.py --in_root workspace/inputs --out_root workspace/inputs --creature goblin_darter --brightness 110 --contrast 105
+py scripts/adjust_frames.py --in_root workspace/outputs/1x --out_root workspace/outputs/1x --creature goblin_darter --group 2 --sharpness 120 --gamma 95
 ```
 
 ## 3) `scripts/process_frames.py`
@@ -95,8 +95,8 @@ Notes:
 Example:
 ```bash
 py scripts/process_frames.py ^
-  --in_root inputs ^
-  --out_root outputs/1x ^
+  --in_root workspace/inputs ^
+  --out_root workspace/outputs/1x ^
   --only_creature goblin_darter ^
   --remove-bg --reframe ^
   --canvas_w 450 ^
@@ -126,7 +126,7 @@ Important:
 
 Example:
 ```bash
-py scripts/build_anim_json.py --input_root outputs/1x --output_root anim_json_root --basepath_prefix battle/ --only_creature goblin_darter
+py scripts/build_anim_json.py --input_root workspace/outputs/1x --output_root workspace/anim_json --basepath_prefix battle/ --only_creature goblin_darter
 ```
 
 ## 5) `scripts/deploy_assets.py`
@@ -152,5 +152,6 @@ Important:
 
 Example:
 ```bash
-py scripts/deploy_assets.py --in_root outputs/1x --in_root_2x outputs/2x --in_root_3x outputs/3x --in_root_4x outputs/4x --out_root <mod_assets_root>/sprites --json_in anim_json_root --json_out <mod_json_root> --only_creature goblin_darter
+py scripts/deploy_assets.py --in_root workspace/outputs/1x --in_root_2x workspace/outputs/2x --in_root_3x workspace/outputs/3x --in_root_4x workspace/outputs/4x --out_root <mod_assets_root>/sprites --json_in workspace/anim_json --json_out <mod_json_root> --only_creature goblin_darter
 ```
+
