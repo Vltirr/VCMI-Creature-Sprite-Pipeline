@@ -12,12 +12,12 @@ env/
 Thumbs.db
 
 # ---- Project working folders (generated, not versioned) ----
-inputs/
-outputs/
-cleaned_alpha/
-forced_bg/
-previews/
-anim_json
+workspace/inputs/
+workspace/outputs/
+workspace/cleaned_alpha/
+workspace/forced_bg/
+workspace/previews/
+workspace/anim_json/
 settings.json
 
 # ---- Logs / temp ----

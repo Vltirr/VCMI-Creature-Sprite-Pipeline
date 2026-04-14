@@ -38,9 +38,9 @@ The GUI viewer assumes this convention for browsing.
 - In the GUI this is opened from `Split Spritesheet...` and is no longer part of the main pipeline step checklist
 
 ### 1) Adjust input (optional)
-`scripts/adjust_frames.py` can run on `inputs` before `scripts/process_frames.py`.
+`scripts/adjust_frames.py` can run on `workspace/inputs` before `scripts/process_frames.py`.
 
-- Reads `inputs/<creature_id>/groupN/*.png`
+- Reads `workspace/inputs/<creature_id>/groupN/*.png`
 - Writes the same folder structure to the selected output root
 - In the GUI, `Adjust Input` is an independent step and does not require `Process Frames`
 - The GUI offers live preview in a dedicated preview editor window using the currently selected viewer frame before writing files
@@ -55,33 +55,33 @@ Key operations:
 - optional preview overlay alpha (`overlay_alpha`) for the preview PNGs
 
 The GUI currently orchestrates multi-resolution processing by calling `scripts/process_frames.py` multiple times, once per selected resolution:
-- `outputs/1x/...`
-- `outputs/2x/...`
-- `outputs/3x/...`
-- `outputs/4x/...`
+- `workspace/outputs/1x/...`
+- `workspace/outputs/2x/...`
+- `workspace/outputs/3x/...`
+- `workspace/outputs/4x/...`
 
 Auxiliary outputs:
-- `previews/<scale>x/...` remain separated by resolution
-- `cleaned_alpha/...` and `forced_bg/...` are shared because they represent helper/base imagery regardless of final target scale
+- `workspace/previews/<scale>x/...` remain separated by resolution
+- `workspace/cleaned_alpha/...` and `workspace/forced_bg/...` are shared because they represent helper/base imagery regardless of final target scale
 
 GUI-facing process operations:
-- `Remove Background` runs chroma/key cleanup and can emit `cleaned_alpha/...`
+- `Remove Background` runs chroma/key cleanup and can emit `workspace/cleaned_alpha/...`
 - `Edge Bleed` is an optional final cleanup pass inside `Remove Background`; it recolors contaminated edge pixels using nearby interior sprite color while preserving alpha
-- `Reframe` resizes, aligns, and writes main processed outputs under `outputs/<scale>x/...`
-- when `Reframe` runs without `Remove Background` in the same execution, the GUI reuses the matching frames from `cleaned_alpha/...` as the process input
-- `Force Background` writes the helper output under `forced_bg/...` without replacing the main processed output
+- `Reframe` resizes, aligns, and writes main processed outputs under `workspace/outputs/<scale>x/...`
+- when `Reframe` runs without `Remove Background` in the same execution, the GUI reuses the matching frames from `workspace/cleaned_alpha/...` as the process input
+- `Force Background` writes the helper output under `workspace/forced_bg/...` without replacing the main processed output
 
 ### 3) Adjust output (optional)
-`scripts/adjust_frames.py` can also run on `outputs` after `scripts/process_frames.py`.
+`scripts/adjust_frames.py` can also run on `workspace/outputs` after `scripts/process_frames.py`.
 
-- Reads `outputs/<scale>x/<creature_id>/groupN/*.png`
+- Reads `workspace/outputs/<scale>x/<creature_id>/groupN/*.png`
 - Writes the same folder structure to the selected output root
 - In the GUI, `Adjust Output` is an independent step and does not require `Process Frames`
 - In the GUI, `Adjust Output` currently runs across all selected processed resolutions
 - The GUI offers live preview in a dedicated preview editor window using the currently selected viewer frame before writing files
 
 ### 4) Build animation JSON
-`scripts/build_anim_json.py` scans `outputs/1x/creature_id/groupN/*.png` and writes `anim_json_root/<creature_id>.json`.
+`scripts/build_anim_json.py` scans `workspace/outputs/1x/creature_id/groupN/*.png` and writes `anim_json_root/<creature_id>.json`.
 
 Important:
 - frame entries include the group folder, e.g. `group3/frame_012.png`
@@ -142,3 +142,4 @@ Each stage includes:
 - `Cleaned Alpha` and `Forced Background` remain shared across resolutions because they are not resolution-specific outputs
 - the viewer remembers its selected `Source` and `Resolution`
 - `Source` entries are shown in bold when that source has PNGs for the current scope
+
