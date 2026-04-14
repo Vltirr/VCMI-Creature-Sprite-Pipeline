@@ -110,6 +110,11 @@ The main configuration area below the pipeline includes:
 - `Process Frames Options`
 - `Image Adjustments`
 
+Process Frames profile loading is intentionally parameter-only:
+- loading Global, Creature, or Group process settings updates durable values such as placement, cleanup, helper color, and selected output resolutions
+- loading a profile does not change the current `Remove Background`, `Reframe`, or `Force Background` operation toggles
+- those operation toggles are treated as run choices for the current session, not profile defaults
+
 ### Image Adjustments
 
 `Image Adjustments` has two visible sections at all times:

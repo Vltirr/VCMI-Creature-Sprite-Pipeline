@@ -61,9 +61,6 @@ class ProfileMixin:
 
     def _collect_process_profile_from_ui(self) -> dict:
         return {
-            "process_remove_bg": self.chk_remove_bg.isChecked(),
-            "process_reframe": self.chk_reframe.isChecked(),
-            "process_force_bg_output": self.chk_force_bg_output.isChecked(),
             "process_force_bg_color": self.le_force_bg_color.text().strip() or "#FF00FF",
             "gen_1x": self.chk_res_1x.isChecked(),
             "gen_2x": self.chk_res_2x.isChecked(),
@@ -85,9 +82,6 @@ class ProfileMixin:
         }
 
     def _apply_process_profile_to_ui(self, data: dict):
-        self.chk_remove_bg.setChecked(bool(data.get("process_remove_bg", True)))
-        self.chk_reframe.setChecked(bool(data.get("process_reframe", True)))
-        self.chk_force_bg_output.setChecked(bool(data.get("process_force_bg_output", False)))
         self.le_force_bg_color.setText(str(data.get("process_force_bg_color", "#FF00FF")))
         self.chk_res_1x.setChecked(bool(data.get("gen_1x", True)))
         self.chk_res_2x.setChecked(bool(data.get("gen_2x", False)))

@@ -1,226 +1,176 @@
-# Developer notes
+# Developer Notes
 
-## Current architecture
+This document tracks architecture decisions and future work. It should not duplicate user-facing documentation from `README.md`, `docs/PIPELINE.md`, or `docs/SCRIPTS.md`.
 
-- `vcmi_creature_sprite_pipeline.py` runs a PySide6 GUI that orchestrates the pipeline.
-- Scripts are still usable standalone (CLI) and are called by the GUI.
+## Current Architecture
 
-## Recommended future refactor (roadmap)
+- `vcmi_creature_sprite_pipeline.py` is the GUI entrypoint.
+- `ui/` contains PySide UI code.
+- `ui/main_window.py` still owns the main window shell, signal wiring, process queue lifecycle, and several panel-building methods.
+- `ui/profile_mixin.py` owns scope/profile/split-related UI behavior.
+- `ui/viewer_mixin.py` owns image and JSON viewer behavior.
+- `ui/viewer.py`, `ui/preview_window.py`, `ui/split_dialog.py`, `ui/log_dialog.py`, and `ui/widgets.py` contain reusable UI pieces.
+- `core/` contains non-UI helpers for settings, paths, profiles, groups, viewer source resolution, command construction, and image adjustments.
+- CLI scripts in `scripts/` are still usable standalone and are called by the GUI.
 
-1) Split the monolithic GUI into modules:
-- `ui/main_window.py`
-- `ui/viewer.py`
-- `ui/logging.py`
-- `ui/settings.py`
-- `runner/queue.py`
-- `runner/commands.py`
+## Current Workflow Decisions
 
-2) Move scripts to a **core + CLI wrapper** structure:
-- `pipeline/` package with core functions
-- keep existing `*.py` scripts as CLI wrappers that call the core
+- `Scope` is the single creature/group selector for both pipeline filtering and viewer browsing.
+- The scope creature control is an editable combo box populated from `workspace/inputs/`.
+- Split spritesheet import is a separate dialog, not a pipeline checkbox.
+- `Save Profile` stores both Process Frames and Image Adjustments at the active scope level.
+- Profile loading is explicit; changing scope does not automatically load profiles.
+- Global defaults are stored in `settings.json`.
+- Current working values are also persisted in `settings.json`.
+- Creature profiles are stored in `workspace/inputs/<creature_id>/_pipeline_profile.json`.
+- Group profiles are stored in `workspace/inputs/<creature_id>/groupN/_pipeline_profile.json`.
+- Process Frames operation toggles are session/run choices and are not saved to or loaded from global, creature, or group profiles.
+- `Image Adjustments` in the main window is a compact summary, not the primary editor.
+- The external preview editor is the main live image-editing surface.
+- The preview editor opens in `Single` mode by default.
+- The main viewer should remain a stable browsing surface for the selected source/frame.
+- Viewer `Source` entries are shown in bold when that source has PNGs for the current scope.
+- `Remove Background` includes optional edge color bleed controlled by radius (`0 = off`).
+- Multi-resolution processing currently supports `1x`, `2x`, `3x`, and `4x`.
+- Processed outputs live under `workspace/outputs/<scale>x/...`.
+- Previews live under `workspace/previews/<scale>x/...`.
+- `workspace/cleaned_alpha/...` and `workspace/forced_bg/...` are shared helper roots across resolutions.
 
-3) Execution model:
-- consider moving from `QProcess` to `QThread/QRunnable` once the pipeline is callable as Python functions
+## Documentation Conventions
 
-4) Tests (high value, low effort):
-- JSON: group-prefixed frames (`groupN/frame.png`)
-- Deploy: merging groups from incoming JSON
-- Process: resize preference (`sprite_h` vs `sprite_w` / `prefer`)
-
-5) Packaging:
-- PyInstaller (Windows)
-- real `.ico` application icon
-
-## Current UI direction
-
-Recent UI decisions worth preserving:
-- `Image Adjustments` in the main window is now a compact read-only summary, not the primary editor.
-- The real image-editing workflow lives in the external preview editor window.
-- The main viewer should remain a stable browsing surface that shows the original selected frame.
-- The preview editor is the only place that should show live adjusted imagery.
-
-## Near-term UX backlog
-
-1) Preview window polish:
-- continue refining toolbar density and control placement
-- keep preview actions close to the image rather than at the bottom of the window
-- keep the `Single` / `Compare` mode selector visually obvious and low-friction
-
-2) Main window adjustments summary:
-- keep the compact `Input stage` / `Output stage` summary layout
-- avoid reintroducing full sliders into the main window unless there is a very strong reason
-
-3) Viewer ergonomics:
-- preserve zoom and scroll state reliably between sessions
-- keep the preview-launch entry point near the viewer tabs without interfering with canvas interaction
-- continue polishing multi-resolution browsing so scale selection stays obvious but low-noise
-
-4) Scope and selection UX:
-- current status:
-  - `Scope` is now the single creature/group selector for both pipeline filtering and viewer browsing
-  - the scope creature control is now an editable combo box populated from `inputs`
-  - `Save Profile` stores both Process Frames and Image Adjustments at the active scope level
-- later option to evaluate:
-  - split the current scope into:
-    - a dedicated split destination selector
-    - a separate processing/filter scope for the rest of the pipeline
-
-5) Image adjustment value transfer:
-- current status:
-  - the main window now provides compact arrow actions between `Input stage` and `Output stage`
-  - supported actions:
-    - copy input adjustments to output
-    - copy output adjustments to input
-    - swap both adjustment sets
-
-6) Background cleanup quality:
-- current status:
-  - `Remove Background` now includes an optional `edge color bleed` pass controlled by radius (`0 = off`)
-  - it runs after chroma cleanup / despill / shrink and before reframe
-- likely future refinement:
-  - keep tuning aggressiveness and neighborhood selection based on real sprite cases
-
-7) Protect canonical input/output roots from image-adjustment writes:
-- current concern:
-  - `Adjust Input` and `Adjust Output` can overwrite the same roots later stages depend on
-  - this makes it harder to reason about source-of-truth imagery and to retry later steps safely
-- future direction:
-  - keep `workspace/inputs/` as immutable source frames
-  - add a dedicated post-input-adjustment root so input previews and later steps do not modify canonical inputs
-  - add a dedicated pre-output-adjustment root so `process_frames` output exists separately from the final adjusted output root
-  - make preview behavior explicit:
-    - input preview should operate from the canonical input-side source chosen by the final design
-    - output preview should always operate from the pre-output-adjustment process result
-  - deploy should prefer the final adjusted output root, or fall back to the raw process output root if no adjusted output exists
-- naming of these new roots should be decided carefully before implementation to avoid another round of confusing folder semantics
-
-8) Continue splitting the GUI main window into smaller modules:
-- `ui/main_window.py` still contains too much UI layout and pipeline orchestration logic in one file
-- risks of keeping it monolithic:
-  - harder to understand and modify safely
-  - localized changes have broader regression risk
-  - merge conflicts become more likely when multiple branches touch unrelated UI areas
-- preferred future split:
-  - main window shell / layout wiring
-  - viewer logic
-  - preview window
-  - split dialog
-  - settings/profile persistence helpers
-  - pipeline command building / orchestration
-
-6) Open-folder shortcuts:
-- current status:
-  - `Open Folder` actions now exist in the main `Paths` area
-  - `Open Folder` is available in the JSON tab/panel
-  - the existing viewer `Open Folder` action remains in place
-
-7) Profile persistence:
-- current status:
-  - global defaults are stored in `settings.json`
-  - current working values are also persisted in `settings.json`
-  - creature profiles are stored in `workspace/inputs/<creature_id>/_pipeline_profile.json`
-  - group profiles are stored in `workspace/inputs/<creature_id>/groupN/_pipeline_profile.json`
-  - loading is explicit; changing scope does not auto-load profiles
-
-## Documentation conventions
-
+- `README.md` should stay focused on quick start, high-level workflow, and repository layout.
+- `docs/PIPELINE.md` should describe pipeline flow, folder conventions, and GUI behavior.
 - `docs/SCRIPTS.md` should stay focused on standalone CLI usage only.
-- `docs/PIPELINE.md` should describe the pipeline flow, folder conventions, and GUI behavior.
+- `docs/DEV_NOTES.md` should track architecture decisions, implementation order, and future work.
 - Internal helper modules such as `core/image_adjustments.py` do not need standalone user-facing docs unless they become public entry points.
+- Update documentation in the same branch as each behavior or architecture change.
 
-## Next pipeline evolution
+## Next Implementation Roadmap
 
-### 1) Multi-resolution output pipeline
-
-Goal:
-- support VCMI asset generation for `1x`, `2x`, `3x`, and `4x`
-- allow the GUI to orchestrate whichever output scales are selected
-- keep folder conventions explicit enough that multi-resolution outputs stay easy to reason about
-
-Current implementation status:
-- the GUI can already generate `1x`, `2x`, `3x`, and `4x` processed outputs by orchestrating repeated calls to `scripts/process_frames.py`
-- processed outputs are stored under `workspace/outputs/<scale>x/...`
-- previews are stored under `workspace/previews/<scale>x/...`
-- cleaned and forced helper outputs are intentionally shared across resolutions as `workspace/cleaned_alpha/...` and `workspace/forced_bg/...`
-- JSON build and deploy currently treat `1x` as the primary source, while deploy can also copy `2x/3x/4x` assets into `sprites2x/3x/4x`
-
-### 2) Independently runnable process stages
+### 1) Scoped cleanup actions
 
 Goal:
-- make `process_frames` operations runnable independently instead of only as one monolithic step
+- provide cleanup actions for generated content without relying on broad/global deletion.
 
-Current GUI-aligned operations:
+Desired behavior:
+- clean by creature
+- clean by creature/group
+- clean a specific frame when practical
+
+UI direction:
+- evaluate placing cleanup actions near the viewer because the viewer already represents the active source, creature, group, and frame.
+- keep destructive cleanup explicit and confirmed.
+
+### 2) Protect canonical input and output roots
+
+Goal:
+- prevent image-adjustment steps from overwriting canonical roots that later stages depend on.
+
+Current concern:
+- `Adjust Input` can overwrite `workspace/inputs`.
+- `Adjust Output` can overwrite `workspace/outputs/<scale>x`.
+- This makes retries and source-of-truth reasoning harder.
+
+Future direction:
+- keep `workspace/inputs/` as immutable source frames.
+- add a dedicated post-input-adjustment root.
+- add a dedicated raw process output root before output adjustments.
+- make preview behavior explicit so users know whether they are viewing canonical input, adjusted input, raw processed output, or final adjusted output.
+- deploy should prefer final adjusted output, or fall back to raw processed output if adjusted output does not exist.
+
+Implementation notes:
+- keep command construction in `core/process_commands.py`.
+- keep path/profile helpers in `core/`.
+- keep UI choices and confirmations in `ui/`.
+- decide names carefully before implementation to avoid another confusing folder migration.
+
+### 3) Improve difficult background-removal cases
+
+Goal:
+- handle cases where floor shadows or low-contrast ground remnants survive chroma cleanup.
+
+Investigation paths:
+- tune edge color bleed behavior.
+- add an optional mask cleanup pass.
+- add an optional shadow/floor suppression pass.
+- review whether current shrink/feather/despill ordering is ideal for these cases.
+
+Constraint:
+- avoid making default background removal more destructive.
+- prefer optional controls that can be enabled for difficult sprites.
+
+### 4) Continue evolving `process_frames.py`
+
+Goal:
+- reduce the internal size and coupling of `process_frames.py` while keeping CLI compatibility.
+
+Candidate splits:
+- frame discovery
 - background removal
-- reframing into explicit canvases
-- forced background helper generation
+- edge color bleed
+- reframing/alignment
+- forced background generation
+- preview generation
+- operation orchestration
 
-Design direction:
-- the GUI should be able to compose these operations as needed
-- helper outputs should stay clearly separate from main processed outputs
-- longer term, this still argues for splitting `process_frames.py` into reusable core operations with a thin orchestration layer on top
+Preferred approach:
+- extract reusable pure functions first.
+- keep the existing CLI arguments stable.
+- add focused tests around extracted behavior where practical.
 
-Deferred follow-up:
-- continue decoupling the internal `process_frames.py` implementation into smaller reusable units such as frame discovery, background removal, reframing, forced background generation, and preview generation
-
-### 3) Hierarchical settings
-
-Goal:
-- stop relying only on global defaults for `process_frames` and image adjustments
-- allow settings to vary by creature and animation group
-
-Preferred model:
-- global defaults
-- per-creature overrides
-- per-group overrides
-- optional per-resolution overrides later if the multi-resolution workflow requires them
-
-Why this matters:
-- different creatures often need different baselines, paddings, and cleanup settings
-- different animation groups may need different offsets or treatment
-- multi-resolution processing will make fixed global settings even less practical
-
-### 4) Resolution-specific overrides
+### 5) Continue splitting `ui/main_window.py`
 
 Goal:
-- keep the current simple `1x`-driven UI as the default
-- allow later overrides for selected parameters per resolution when needed
+- reduce merge conflicts and lower the blast radius of UI changes.
 
-Design direction:
-- keep the scaling/orchestration logic in the GUI layer
-- let the script continue to execute only the explicit numeric parameters it receives
-- add per-resolution overrides only after the base hierarchical settings model is in place
+Candidate splits:
+- paths panel
+- pipeline steps panel
+- process options panel
+- image adjustments panel
+- run queue/controller
+- log panel wiring
 
-### Suggested implementation order
+Preferred approach:
+- keep each split behavior-neutral.
+- avoid UI redesign while moving code.
+- verify with `py_compile` and a GUI smoke test after each split.
 
-1. Stop saving/loading the three main `Process Frames` operation flags in global, creature, and group profiles.
-- The selected operations are circumstantial run choices, not durable process settings.
-- Profiles should keep durable processing parameters such as cleanup, placement, helper output, and resolution settings.
+## Later Backlog
 
-2. Add scoped cleanup actions for generated content.
-- Cleanup should support the current scope level: creature, creature/group, and ideally a specific frame.
-- Avoid global destructive cleanup as the default interaction.
-- Evaluate placing these actions near the viewer, since the viewer already expresses what the user is looking at.
+### Preview and viewer polish
 
-3. Protect canonical input and output roots from image-adjustment writes.
-- Keep following the current modular direction: command construction in `core/process_commands.py`, path/profile helpers in `core/`, and UI decisions in `ui/`.
-- Add explicit intermediate roots for adjusted input and raw processed output before changing behavior broadly.
-- Keep preview behavior explicit so users can understand which version they are seeing and editing.
+- continue refining preview toolbar density and control placement.
+- keep preview actions close to the image rather than at the bottom of the window.
+- preserve zoom and scroll state reliably between sessions.
+- continue polishing multi-resolution browsing so scale selection stays obvious but low-noise.
 
-4. Improve difficult background-removal cases.
-- Investigate whether floor shadows and low-contrast ground remnants need an edge-bleed improvement, a mask cleanup option, or a separate shadow/floor suppression pass.
-- Prefer small optional controls over making the default chroma cleanup more destructive.
+### Scope model reconsideration
 
-5. Continue evolving `process_frames.py`.
-- Split reusable internals such as frame discovery, background removal, edge bleed, reframing, forced background generation, and preview generation.
-- Keep CLI compatibility while making the implementation easier to test and reuse.
+- current scope works as the unified selector for viewer and pipeline.
+- later, evaluate whether split import needs its own destination model separate from processing/viewer scope.
 
-6. Continue splitting `ui/main_window.py`.
-- Candidate next splits: path panel, process options panel, image-adjustment panel, and run-queue controller.
-- Keep each split behavior-neutral and documented.
+### Tests
 
-### Risks to keep in mind
+High-value areas:
+- JSON generation with group-prefixed frames (`groupN/frame.png`)
+- deploy merging groups from incoming JSON
+- process resize preference (`sprite_h` vs `sprite_w` / `prefer`)
+- profile save/load behavior by global, creature, and group
+- command construction for selected scope and selected resolutions
 
-- mixing multiple resolutions in the same roots without a strong convention will make viewer, deploy, and JSON generation harder to reason about
-- exposing independently runnable stages in the GUI will need careful UX so the active combination of operations stays understandable
+### Packaging
 
+- PyInstaller Windows build.
+- real `.ico` application icon.
 
+### Execution model
+
+- consider moving from `QProcess` to `QThread` or `QRunnable` only after more pipeline operations are callable as Python functions.
+
+## Risks To Keep In Mind
+
+- folder semantics can become confusing quickly if raw, adjusted, helper, and deployable outputs are not named carefully.
+- cleanup actions must be scoped and confirmed to avoid accidental data loss.
+- exposing independently runnable stages in the GUI needs careful UX so users understand the active operation combination.
+- large UI changes should be split into small branches to reduce merge conflicts.
