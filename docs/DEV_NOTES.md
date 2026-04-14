@@ -121,6 +121,7 @@ Recent UI decisions worth preserving:
   - creature profiles are stored in `workspace/inputs/<creature_id>/_pipeline_profile.json`
   - group profiles are stored in `workspace/inputs/<creature_id>/groupN/_pipeline_profile.json`
   - loading is explicit; changing scope does not auto-load profiles
+  - Process Frames operation toggles are session/run choices and are not saved to or loaded from global, creature, or group profiles
 
 ## Documentation conventions
 
@@ -192,7 +193,7 @@ Design direction:
 
 ### Suggested implementation order
 
-1. Stop saving/loading the three main `Process Frames` operation flags in global, creature, and group profiles.
+1. Stop saving/loading the three main `Process Frames` operation flags in global, creature, and group profiles. (Done)
 - The selected operations are circumstantial run choices, not durable process settings.
 - Profiles should keep durable processing parameters such as cleanup, placement, helper output, and resolution settings.
 

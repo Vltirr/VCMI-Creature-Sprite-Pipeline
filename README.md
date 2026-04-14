@@ -35,6 +35,8 @@ Profile storage:
 - global defaults live in `settings.json`
 - creature profiles live in `workspace/inputs/<creature_id>/_pipeline_profile.json`
 - group profiles live in `workspace/inputs/<creature_id>/groupN/_pipeline_profile.json`
+- Process Frames profiles store durable parameter values, but not the main operation toggles (`Remove Background`, `Reframe`, `Force Background`)
+- loading a Process Frames profile keeps the currently selected operation toggles unchanged
 
 The main configuration area includes:
 - `Process Frames Options` for frame cleanup, reframing, helper outputs, and multi-resolution generation

@@ -3,6 +3,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+_PROCESS_OPERATION_FLAG_KEYS = {
+    "process_remove_bg",
+    "process_reframe",
+    "process_force_bg_output",
+}
+
+
 @dataclass
 class AppSettings:
     scripts_dir: str = "./scripts"
@@ -96,9 +103,6 @@ def _migrate_loaded_paths(path: Path, settings: AppSettings):
 
 def _settings_process_profile_dict(settings: AppSettings) -> dict:
     return {
-        "process_remove_bg": settings.process_remove_bg,
-        "process_reframe": settings.process_reframe,
-        "process_force_bg_output": settings.process_force_bg_output,
         "process_force_bg_color": settings.process_force_bg_color,
         "gen_1x": settings.gen_1x,
         "gen_2x": settings.gen_2x,
@@ -118,6 +122,31 @@ def _settings_process_profile_dict(settings: AppSettings) -> dict:
         "key_from": settings.key_from,
         "bg_mode": settings.bg_mode,
     }
+
+
+def _settings_process_current_values_dict(settings: AppSettings) -> dict:
+    data = _settings_process_profile_dict(settings)
+    data.update({
+        "process_remove_bg": settings.process_remove_bg,
+        "process_reframe": settings.process_reframe,
+        "process_force_bg_output": settings.process_force_bg_output,
+    })
+    return data
+
+
+def _sanitize_process_profile(data: dict) -> dict:
+    if not isinstance(data, dict):
+        return {}
+    return {k: v for k, v in data.items() if k not in _PROCESS_OPERATION_FLAG_KEYS}
+
+
+def _sanitize_global_profiles(data: dict) -> dict:
+    if not isinstance(data, dict):
+        return {}
+    profiles = dict(data)
+    if "process_frames" in profiles:
+        profiles["process_frames"] = _sanitize_process_profile(profiles.get("process_frames", {}))
+    return profiles
 
 
 def _settings_adjust_profile_dict(settings: AppSettings) -> dict:
@@ -159,7 +188,7 @@ def load_settings(path: Path) -> AppSettings:
             for k, v in current_values.get("image_adjustments", {}).items():
                 if hasattr(s, k):
                     setattr(s, k, v)
-            s.global_profiles = data.get("global_profiles", {})
+            s.global_profiles = _sanitize_global_profiles(data.get("global_profiles", {}))
         else:
             for k, v in data.items():
                 if hasattr(s, k):
@@ -210,12 +239,12 @@ def save_settings(path: Path, settings: AppSettings):
             "ui_log_expanded": settings.ui_log_expanded,
             "ui_splitter_sizes": settings.ui_splitter_sizes,
         },
-        "global_profiles": settings.global_profiles or {
+        "global_profiles": _sanitize_global_profiles(settings.global_profiles) or {
             "process_frames": _settings_process_profile_dict(settings),
             "image_adjustments": _settings_adjust_profile_dict(settings),
         },
         "current_values": {
-            "process_frames": _settings_process_profile_dict(settings),
+            "process_frames": _settings_process_current_values_dict(settings),
             "image_adjustments": _settings_adjust_profile_dict(settings),
         },
     }
