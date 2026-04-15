@@ -230,15 +230,7 @@ class ProfileMixin:
 
     def _refresh_scope_creature_choices(self):
         current = self.le_only_creature.currentText().strip()
-        root_text = self.le_input_root.text().strip()
-        creatures = []
-        if root_text:
-            root = Path(root_text)
-            if root.exists() and root.is_dir():
-                creatures = sorted(
-                    p.name for p in root.iterdir()
-                    if p.is_dir() and CREATURE_ID_RE.match(p.name)
-                )
+        creatures = sorted(self._scope_creatures_with_content())
         self.le_only_creature.blockSignals(True)
         self.le_only_creature.clear()
         self.le_only_creature.addItem("")
@@ -249,21 +241,57 @@ class ProfileMixin:
             if idx >= 0:
                 self.le_only_creature.setCurrentIndex(idx)
             else:
-                self.le_only_creature.setEditText(current)
+                self.le_only_creature.setCurrentIndex(0)
         else:
             self.le_only_creature.setCurrentIndex(0)
         self.le_only_creature.blockSignals(False)
 
+    def _scope_content_roots(self) -> list[Path]:
+        roots: list[Path] = []
+        input_text = self.le_input_root.text().strip()
+        if input_text:
+            roots.append(Path(input_text))
+        processed_text = self.le_processed_root.text().strip()
+        if processed_text:
+            processed = Path(processed_text)
+            parent = processed.parent
+            roots.extend(processed / f"{scale}x" for scale in [1, 2, 3, 4])
+            roots.extend(parent / "previews" / f"{scale}x" for scale in [1, 2, 3, 4])
+            roots.extend([parent / "cleaned_alpha", parent / "forced_bg"])
+        unique: list[Path] = []
+        seen = set()
+        for root in roots:
+            key = str(root)
+            if key not in seen:
+                unique.append(root)
+                seen.add(key)
+        return unique
+
+    def _scope_creature_has_png(self, creature: str) -> bool:
+        for root in self._scope_content_roots():
+            cdir = root / creature
+            if cdir.exists() and cdir.is_dir() and any(cdir.rglob("*.png")):
+                return True
+        return False
+
+    def _scope_creatures_with_content(self) -> set[str]:
+        creatures: set[str] = set()
+        for root in self._scope_content_roots():
+            if not root.exists() or not root.is_dir():
+                continue
+            for child in root.iterdir():
+                if child.is_dir() and CREATURE_ID_RE.match(child.name) and self._scope_creature_has_png(child.name):
+                    creatures.add(child.name)
+        return creatures
+
     def _scope_group_has_png(self, creature: str, group: int) -> bool:
         if not creature:
             return False
-        root_text = self.le_input_root.text().strip()
-        if not root_text:
-            return False
-        gdir = Path(root_text) / creature / f"group{group}"
-        if not gdir.exists() or not gdir.is_dir():
-            return False
-        return any(p.is_file() and p.suffix.lower() == ".png" for p in gdir.iterdir())
+        for root in self._scope_content_roots():
+            gdir = root / creature / f"group{group}"
+            if gdir.exists() and gdir.is_dir() and any(p.is_file() and p.suffix.lower() == ".png" for p in gdir.iterdir()):
+                return True
+        return False
 
     def _refresh_scope_group_choices(self, preferred_group: int | None = None, select_first_with_content: bool = False):
         creature = self.le_only_creature.currentText().strip()

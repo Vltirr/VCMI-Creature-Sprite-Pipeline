@@ -115,6 +115,16 @@ Process Frames profile loading is intentionally parameter-only:
 - loading a profile does not change the current `Remove Background`, `Reframe`, or `Force Background` operation toggles
 - those operation toggles are treated as run choices for the current session, not profile defaults
 
+Cleanup is scoped:
+- `Clean Frame` deletes only the currently visible generated frame in the viewer
+- `Clean Selection` deletes generated content for the active scope
+- with a creature and group selected, `Clean Selection` can target the current generated viewer source
+- with scope group set to `All`, `Clean Selection` cleans generated workspace outputs for the selected creature
+- `Inputs` are cleaned only through `Clean Input...`
+- the viewer `Source` and `Resolution` selectors highlight entries with PNGs in bold
+- `Clear Outputs` is still available for clearing all generated workspace outputs and generated animation JSON
+- `Clean Input...` uses a separate protected dialog for cleaning `workspace/inputs`
+
 ### Image Adjustments
 
 `Image Adjustments` has two visible sections at all times:
