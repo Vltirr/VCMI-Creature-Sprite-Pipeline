@@ -9,6 +9,7 @@ from PySide6.QtGui import QPixmap, QTextCursor, QKeySequence, QShortcut, QTextDo
 from PIL import Image
 from PIL.ImageQt import ImageQt
 
+from core.cleanup import remove_path_safely
 from core.image_adjustments import apply_adjustments
 from core.groups import CREATURE_ID_RE, VALID_GROUPS, group_label
 from core.paths import exists_dir, exists_file, is_nonempty, quote_cmd, safe_clear_dir_contents, script_path
@@ -28,6 +29,7 @@ from core.settings import (
     save_settings,
 )
 from core.viewer_sources import source_has_png, viewer_source_root_for_label
+from ui.cleanup_input_dialog import CleanupInputDialog
 from ui.log_dialog import LogDialog
 from ui.preview_window import PreviewWindow
 from ui.split_dialog import SplitDialog
@@ -41,7 +43,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QSpinBox, QMessageBox, QComboBox, QTabWidget,
     QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QPlainTextEdit,
     QSplitter, QToolButton, QFrame, QDialog, QScrollArea, QStyle, QColorDialog,
-    QSizePolicy, QSlider,
+    QSizePolicy, QSlider, QSpacerItem,
 
 )
 SETTINGS_FILE = "settings.json"
@@ -357,7 +359,7 @@ class PipelineRunner(ProfileMixin, ViewerJsonMixin, QWidget):
         self.btn_split_dialog = QPushButton("Split Spritesheet...")
         self.btn_save = QPushButton("Save")
         self.btn_reset_paths = QPushButton("Reset Defaults")
-        self.btn_clear_input = QPushButton("Clear Input")
+        self.btn_clear_input = QPushButton("Clean Input...")
         self.btn_clear_outputs = QPushButton("Clear Outputs")
 
         self.btn_run = QPushButton("Run")
@@ -1078,6 +1080,7 @@ class PipelineRunner(ProfileMixin, ViewerJsonMixin, QWidget):
 
         self.cb_view_source = QComboBox()
         self.cb_view_source.addItems([
+            "",
             "Inputs",
             "Outputs",
             "Cleaned Alpha",
@@ -1096,6 +1099,8 @@ class PipelineRunner(ProfileMixin, ViewerJsonMixin, QWidget):
 
         self.btn_view_refresh = QPushButton("Refresh")
         self.btn_open_folder = QPushButton("Open Folder")
+        self.btn_clean_frame = QPushButton("Clean Frame")
+        self.btn_clean_selection = QPushButton("Clean Selection")
         self.btn_prev = QPushButton("Prev (A)")
         self.btn_next = QPushButton("Next (D)")
 
@@ -1110,6 +1115,8 @@ class PipelineRunner(ProfileMixin, ViewerJsonMixin, QWidget):
 
         controls.addSpacing(6)
         controls.addWidget(self.btn_open_folder)
+        controls.addWidget(self.btn_clean_frame)
+        controls.addWidget(self.btn_clean_selection)
 
         # Viewer-only background (does NOT affect generated PNG previews)
         controls.addSpacing(6)
@@ -1389,6 +1396,8 @@ class PipelineRunner(ProfileMixin, ViewerJsonMixin, QWidget):
         self.cb_view_scale.currentIndexChanged.connect(lambda: self.viewer_refresh_all(keep_selection=True))
         self.cb_view_frame.currentIndexChanged.connect(self.viewer_load_selected)
         self.btn_open_folder.clicked.connect(self.viewer_open_folder)
+        self.btn_clean_frame.clicked.connect(self.clean_viewer_frame)
+        self.btn_clean_selection.clicked.connect(self.clean_viewer_selection)
         self.btn_viewer_preview.clicked.connect(self._open_preview_window)
         self.btn_pick_canvas_bg.clicked.connect(self._pick_canvas_bg)
         self.btn_force_bg_color.clicked.connect(self._pick_force_bg_color)
@@ -1456,8 +1465,8 @@ class PipelineRunner(ProfileMixin, ViewerJsonMixin, QWidget):
         # ---- Top actions / global ----
         tt(None, self.btn_save, "Save settings.json (paths, defaults, UI state).")
         tt(None, self.btn_reset_paths, "Reset paths to defaults relative to scripts folder.")
-        tt(None, self.btn_clear_input, "Clear ALL contents of input_root (keeps folder).")
-        tt(None, self.btn_clear_outputs, "Clear processed_root + siblings (cleaned/forced/previews) + anim_json_root.")
+        tt(None, self.btn_clear_input, "Open a protected dialog to clean a specific folder under Input root.")
+        tt(None, self.btn_clear_outputs, "Clear processed outputs, helper outputs, previews, and generated animation JSON.")
         tt(None, self.btn_run, "Run the selected pipeline steps (queued).")
         tt(None, self.btn_stop, "Stop current running step and clear remaining queue.")
 
@@ -1514,11 +1523,13 @@ class PipelineRunner(ProfileMixin, ViewerJsonMixin, QWidget):
         tt(None, self.chk_res_4x, "Generate 4x processed output alongside any other selected resolutions.")
 
         # ---- Viewer controls ----
-        tt(None, self.cb_view_source, "Select viewer source root (Inputs/Outputs/Cleaned Alpha/Previews/Forced Background/Deployed).")
+        tt(None, self.cb_view_source, "Select viewer source root. Empty source lets Clean Selection target all generated output roots for the current scope.")
         tt(None, self.cb_view_scale, "Select the resolution variant to browse for processed, preview, cleaned, or forced outputs.")
         tt(None, self.btn_view_refresh, "Refresh viewer content for the current scope and selected source.")
         tt(None, self.cb_view_frame, "Select PNG frame to preview.")
         tt(None, self.btn_open_folder, "Open selected folder in file explorer.")
+        tt(None, self.btn_clean_frame, "Delete only the currently visible generated frame.")
+        tt(None, self.btn_clean_selection, "Delete the current generated source selection for the active creature or creature/group.")
         tt(None, self.btn_viewer_preview, "Open the preview editor for the current viewer frame.")
         tt(None, self.btn_prev, "Previous frame (A).")
         tt(None, self.btn_next, "Next frame (D).")
@@ -2219,21 +2230,60 @@ class PipelineRunner(ProfileMixin, ViewerJsonMixin, QWidget):
         self.viewer_refresh_all(keep_selection=True)
         self.json_refresh_all(keep_selection=True)
 
+    def _wide_confirmation(self, title: str, message: str) -> bool:
+        box = QMessageBox(self)
+        box.setWindowTitle(title)
+        box.setIcon(QMessageBox.Question)
+        box.setText(message)
+        box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        box.setDefaultButton(QMessageBox.No)
+        box.setMinimumWidth(720)
+        layout = box.layout()
+        if layout is not None:
+            layout.addItem(QSpacerItem(680, 0, QSizePolicy.Minimum, QSizePolicy.Expanding), layout.rowCount(), 0, 1, layout.columnCount())
+        return box.exec() == QMessageBox.Yes
+
     def clear_input_root(self):
-        folder = Path(self.le_input_root.text().strip())
-        if not folder.exists():
+        input_root = Path(self.le_input_root.text().strip())
+        if not input_root.exists() or not input_root.is_dir():
             self.append_log("[WARN] Input Root does not exist.", "warn")
             return
-        resp = QMessageBox.question(
-            self, "Confirm",
-            f"Delete ALL contents inside:\n{folder}\n\nThis cannot be undone.",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        if resp != QMessageBox.Yes:
+        dlg = CleanupInputDialog(self, input_root=str(input_root))
+        if dlg.exec() != QDialog.Accepted:
             return
-        f, d = safe_clear_dir_contents(folder)
-        self.append_log(f"[OK] Cleared Input Root: {f} files, {d} folders removed.", "ok")
+        values = dlg.values()
+        target = Path(values["target"])
+        is_all_inputs = bool(values["is_all_inputs"])
+        if is_all_inputs:
+            title = "Delete ALL Input Frames?"
+            message = (
+                "This will delete ALL contents under the configured Input root.\n\n"
+                f"{target}\n\n"
+                "This is the canonical source input folder and the action cannot be undone."
+            )
+        else:
+            title = "Clean Input"
+            message = (
+                "Delete the selected input folder?\n\n"
+                f"{target}\n\n"
+                "This cannot be undone."
+            )
+        if not self._wide_confirmation(title, message):
+            return
+        try:
+            result = remove_path_safely(
+                target,
+                input_root,
+                allow_root=is_all_inputs,
+                keep_root=is_all_inputs,
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Clean Input", str(e))
+            self.append_log(f"[ERROR] Clean Input failed: {e}", "error")
+            return
+        self.append_log(f"[OK] Cleaned Input: {target} ({result.files} files, {result.folders} folders removed)", "ok")
         self._refresh_scope_creature_choices()
+        self._refresh_scope_group_choices(select_first_with_content=True)
         self.viewer_refresh_all(keep_selection=True)
 
     def clear_outputs(self):
@@ -2250,14 +2300,12 @@ class PipelineRunner(ProfileMixin, ViewerJsonMixin, QWidget):
             ]
         targets += [animjson]
 
-        resp = QMessageBox.question(
-            self, "Confirm",
+        message = (
             "Delete ALL contents of these folders (folders kept):\n\n" +
             "\n".join(str(t) for t in targets) +
-            "\n\nThis cannot be undone.",
-            QMessageBox.Yes | QMessageBox.No
+            "\n\nThis cannot be undone."
         )
-        if resp != QMessageBox.Yes:
+        if not self._wide_confirmation("Confirm", message):
             return
 
         for t in targets:
@@ -2267,6 +2315,7 @@ class PipelineRunner(ProfileMixin, ViewerJsonMixin, QWidget):
         self.viewer_refresh_all(keep_selection=True)
         self.json_refresh_all(keep_selection=False)
         self._refresh_scope_creature_choices()
+        self._refresh_scope_group_choices(select_first_with_content=True)
 
     # ---------------- scope ----------------
     def on_save(self):
@@ -2425,9 +2474,10 @@ class PipelineRunner(ProfileMixin, ViewerJsonMixin, QWidget):
             self.btn_stop.setEnabled(False)
             self.proc = None
             self.current_step = "ui"
+            self._refresh_scope_creature_choices()
+            self._refresh_scope_group_choices(select_first_with_content=True)
             self.viewer_refresh_all(keep_selection=True)
             self.json_refresh_all(keep_selection=True)
-            self._refresh_scope_creature_choices()
             return
 
         cmd = self.queue.pop(0)

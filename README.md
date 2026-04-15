@@ -68,6 +68,15 @@ The `Image Adjustments` panel supports:
 - the viewer remembers its selected `Source` and `Resolution` between app launches
 - viewer `Source` entries are shown in bold when that source has PNGs for the current scope
 
+Cleanup actions:
+- `Clean Frame` in the viewer deletes only the currently visible generated PNG
+- `Clean Selection` deletes generated content for the active creature/group selection
+- when a specific generated viewer source is selected, cleanup targets that source
+- when no generated source is selected, cleanup targets generated workspace outputs for the active scope
+- the viewer `Source` and `Resolution` selectors highlight entries with PNGs in bold
+- `Clear Outputs` remains available for clearing all generated workspace outputs and generated animation JSON
+- `Clean Input...` opens a protected dialog for deleting all inputs, one creature, or one creature/group
+
 ## Quick start (CLI)
 
 See `docs/SCRIPTS.md` for full parameters. Typical pipeline:

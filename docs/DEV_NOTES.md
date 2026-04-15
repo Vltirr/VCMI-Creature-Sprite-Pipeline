@@ -30,6 +30,13 @@ This document tracks architecture decisions and future work. It should not dupli
 - The preview editor opens in `Single` mode by default.
 - The main viewer should remain a stable browsing surface for the selected source/frame.
 - Viewer `Source` entries are shown in bold when that source has PNGs for the current scope.
+- Viewer `Clean Frame` deletes only the currently visible generated PNG.
+- Viewer `Clean Selection` deletes generated content for the selected scope.
+- With a creature and group selected, `Clean Selection` can target the current cleanable source (`Outputs`, `Previews`, `Cleaned Alpha`, `Forced Background`, or `Deployed`).
+- With the viewer source left empty, `Clean Selection` targets all generated workspace roots for the selected creature or creature/group, excluding deployed mod folders.
+- With scope group set to `All`, `Clean Selection` targets all generated workspace roots for the selected creature and ignores the viewer source.
+- `Clean Input...` uses a separate protected dialog and validates that the target remains inside the configured Input root.
+- Global `Clear Outputs` remains available for clearing all generated workspace outputs and generated animation JSON.
 - `Remove Background` includes optional edge color bleed controlled by radius (`0 = off`).
 - Multi-resolution processing currently supports `1x`, `2x`, `3x`, and `4x`.
 - Processed outputs live under `workspace/outputs/<scale>x/...`.
@@ -47,21 +54,7 @@ This document tracks architecture decisions and future work. It should not dupli
 
 ## Next Implementation Roadmap
 
-### 1) Scoped cleanup actions
-
-Goal:
-- provide cleanup actions for generated content without relying on broad/global deletion.
-
-Desired behavior:
-- clean by creature
-- clean by creature/group
-- clean a specific frame when practical
-
-UI direction:
-- evaluate placing cleanup actions near the viewer because the viewer already represents the active source, creature, group, and frame.
-- keep destructive cleanup explicit and confirmed.
-
-### 2) Protect canonical input and output roots
+### 1) Protect canonical input and output roots
 
 Goal:
 - prevent image-adjustment steps from overwriting canonical roots that later stages depend on.
@@ -84,7 +77,7 @@ Implementation notes:
 - keep UI choices and confirmations in `ui/`.
 - decide names carefully before implementation to avoid another confusing folder migration.
 
-### 3) Improve difficult background-removal cases
+### 2) Improve difficult background-removal cases
 
 Goal:
 - handle cases where floor shadows or low-contrast ground remnants survive chroma cleanup.
@@ -99,7 +92,7 @@ Constraint:
 - avoid making default background removal more destructive.
 - prefer optional controls that can be enabled for difficult sprites.
 
-### 4) Continue evolving `process_frames.py`
+### 3) Continue evolving `process_frames.py`
 
 Goal:
 - reduce the internal size and coupling of `process_frames.py` while keeping CLI compatibility.
@@ -118,7 +111,7 @@ Preferred approach:
 - keep the existing CLI arguments stable.
 - add focused tests around extracted behavior where practical.
 
-### 5) Continue splitting `ui/main_window.py`
+### 4) Continue splitting `ui/main_window.py`
 
 Goal:
 - reduce merge conflicts and lower the blast radius of UI changes.
